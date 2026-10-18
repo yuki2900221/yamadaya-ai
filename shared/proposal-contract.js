@@ -18,7 +18,7 @@ export function validProposal(value) {
   const text = (s, max) => typeof s === 'string' && s.trim().length > 0 && s.length <= max;
   return Boolean(value && Object.keys(value).sort().join(',') === 'catchphrase,confirmation_points,direction,headlines' &&
     Array.isArray(value.headlines) && value.headlines.length === 3 && value.headlines.every(s => text(s, 180)) &&
-    text(value.catchphrase, 240) && text(value.direction, 500) && Array.isArray(value.confirmation_points) &&
+    typeof value.catchphrase === 'string' && value.catchphrase.length <= 240 && text(value.direction, 500) && Array.isArray(value.confirmation_points) &&
     value.confirmation_points.length >= 1 && value.confirmation_points.length <= 4 && value.confirmation_points.every(s => text(s, 240)));
 }
 export const PROPOSAL_CASES = [

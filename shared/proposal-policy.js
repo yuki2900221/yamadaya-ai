@@ -1,6 +1,6 @@
 import { proposalInput, PROPOSAL_SCHEMA, validProposal } from './proposal-contract.js';
 
-export const PROPOSAL_POLICY = 'source-lines-and-fixed-paper-v1';
+export const PROPOSAL_POLICY = 'source-lines-and-fixed-paper-v2';
 export const PROPOSAL_PAPERS = {
   a4p: { label: 'A4 縦', width: 210, height: 297 },
   a4l: { label: 'A4 横', width: 297, height: 210 },
@@ -19,7 +19,17 @@ export const CONFIRMATION_CHOICES = [
   '入力していない特徴は、確認してから元情報へ追加してください。',
 ];
 const FALLBACK_HEADLINE = '売場からのお知らせ';
-const FALLBACK_COPY = '内容をご確認ください。';
+const FALLBACK_COPY = '';
+
+export function popCopyChoices(info) {
+  return [...new Set([FALLBACK_COPY, ...info.split(/\r\n|\n|\r/).filter(line => line.trim() && line.length <= 240)])];
+}
+
+// Recheck at image dispatch as an older open screen can still hold a stale plan.
+// An empty value means no extra printed copy, never a printed UI instruction.
+export function safePopCopy(info, copy) {
+  return popCopyChoices(info).includes(copy) ? copy : FALLBACK_COPY;
+}
 
 // Whole lines preserve negation, qualification, numbers and spacing. Substring
 // matching would wrongly accept 「ふんわり」 from 「ふんわりではない」.
@@ -28,7 +38,7 @@ export function sourceChoices(input) {
   const lines = [...new Set(input.info.split(/\r\n|\n|\r/).filter(line => line.trim()))];
   return {
     headlines: [...new Set([...lines.filter(line => line.length <= 180), FALLBACK_HEADLINE])],
-    catchphrases: [...new Set([...lines.filter(line => line.length <= 240), FALLBACK_COPY])],
+    catchphrases: popCopyChoices(input.info),
   };
 }
 export function constrainedProposalSchema(input) {

@@ -10,9 +10,14 @@ import { FEATURES, validateJob, error } from './contracts.mjs';
 import { reviewProposal } from '../shared/proposal-policy.js';
 const root=path.resolve(import.meta.dirname,'..');
 const hash=s=>createHash('sha256').update(s).digest('hex');
+export function numericUsage(value,depth=0){
+ if(Number.isSafeInteger(value)&&value>=0)return value;
+ if(!value||typeof value!=='object'||Array.isArray(value)||depth>=3)return undefined;
+ return Object.fromEntries(Object.entries(value).filter(([k])=>/^[a-z_]{1,60}$/.test(k)).map(([k,v])=>[k,numericUsage(v,depth+1)]).filter(([,v])=>v!==undefined));
+}
 const loopback=a=>['127.0.0.1','::1','::ffff:127.0.0.1'].includes(a);
 const publicJob=(record,result)=>({id:record.id,state:record.state,result:record.state==='succeeded'?result||null:null,message:record.state==='unknown'?'結果または課金が未確定です。自動で再送しません。':record.state==='sending'?'作成しています。':'',billing:record.state==='succeeded'?'usage計算・請求未照合':'未確定'});
-export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(root,'.runtime'),provider,origin='http://127.0.0.1:4176',allowedOrigins=[origin],sessionTtlMs=15*60*1000,now=()=>Date.now(),textKey='',imageKey='',project='',searchEnabled=false,continuation=null}={}){
+export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(root,'.runtime'),provider,origin='http://127.0.0.1:4176',allowedOrigins=[origin],sessionTtlMs=15*60*1000,now=()=>Date.now(),textKey='',imageKey='',project='',searchEnabled=false,continuation=null,acknowledgement=null}={}){
  if(!['demo','live','unconfigured'].includes(mode))throw Error('Invalid APP_MODE');
  const demo=mode==='demo', ledger=new Ledger(demo?':memory:':path.join(directory,'jobs.sqlite'),{budgetUsd:demo?10:budgetUsd,now});
  const ai=provider||(demo?createDemoProvider():createProvider({textKey,imageKey,project,searchEnabled}));
@@ -47,7 +52,7 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
     if(!session){const id=randomBytes(32).toString('hex');session={owner:hash(id),csrf:randomBytes(32).toString('hex'),expires:now()+sessionTtlMs};sessions.set(id,session);res.setHeader('Set-Cookie',`yamadaya_session=${id}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(sessionTtlMs/1000)}`);}
     session.expires=now()+sessionTtlMs;
     const oneTestId=continuation&&continuation.expires>now()&&!ledger.db.prepare('SELECT id FROM jobs WHERE id=?').get(continuation.id)?continuation.id:null;
-    json(200,{csrf:session.csrf,mode,capabilities:FEATURES,connected:mode==='live'&&!!textKey,imageConnected:mode==='live'&&!!imageKey,budgetRemainingUsd:demo?null:Math.max(0,(ledger.usage().limit-ledger.usage().reserved)/1e6),idleMinutes:sessionTtlMs/60000,searchEnabled:demo||searchEnabled,spendingPaused:!demo&&ledger.usage().uncertain>0&&!oneTestId,oneTestId});return;
+    json(200,{csrf:session.csrf,mode,capabilities:FEATURES,connected:mode==='live'&&!!textKey,imageConnected:mode==='live'&&!!imageKey,budgetRemainingUsd:demo?null:Math.max(0,(ledger.usage().limit-ledger.usage().reserved)/1e6),idleMinutes:sessionTtlMs/60000,searchEnabled:demo||searchEnabled,spendingPaused:!demo&&ledger.usage().uncertain>0&&!oneTestId&&!ledger.acknowledged(acknowledgement),oneTestId});return;
    }
    if(!session)throw error(401,'利用時間が終了しました。画面を更新して始めてください。','SESSION_EXPIRED');
    session.expires=now()+sessionTtlMs;
@@ -66,7 +71,7 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
    if(old&&old.request_hash!==requestHash)throw error(409,'同じ操作IDで内容を変更できません。');
    if(old)return json(200,publicJob(old,results.get(body.id)?.value));
    if(running>=1)throw error(429,'別の処理を作成中です。完了してから操作してください。','BUSY');
-   const reserved=ledger.reserve(body.id,session.owner,body.feature,body.input.search===true,requestHash,continuation);
+   const reserved=ledger.reserve(body.id,session.owner,body.feature,body.input.search===true,requestHash,continuation,acknowledgement);
    if(reserved.duplicate)return json(200,publicJob(reserved.record,results.get(body.id)?.value));
    running++;
    try{
@@ -77,6 +82,8 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
      value={headline:safe.proposal.headlines[0],headlines:[...new Set(safe.proposal.headlines)],copy:safe.proposal.catchphrase,direction:safe.proposal.direction,checks:safe.proposal.confirmation_points,paper:safe.paper.code,adjusted:safe.adjusted,demo};
     }
     const cost=generated.cost;
+    await fs.mkdir(path.join(directory,'audit'),{recursive:true,mode:0o700});
+    await fs.writeFile(path.join(directory,'audit',`${body.id}.json`),JSON.stringify({usage:numericUsage(generated.usage),calculatedUsd:Number.isFinite(cost)&&cost>=0?cost:null}),{mode:0o600});
     if(cost==null||!Number.isFinite(cost)||cost<0||cost>reserved.record.hold/1e6){ledger.finish(body.id,'unknown',cost!=null&&Number.isFinite(cost)&&cost>=0?cost:null);throw error(409,'費用の確認が必要です。管理PCで確認するまで新しい送信を停止します。','COST_UNCERTAIN');}
     results.set(body.id,{owner:session.owner,value});ledger.finish(body.id,'succeeded',cost);
     return json(200,publicJob(ledger.get(body.id,session.owner),value));
@@ -92,7 +99,8 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
 }
 export async function start({port=Number(process.env.PORT||4176),mode=process.env.APP_MODE||'unconfigured',origin=process.env.APP_ORIGIN||`http://127.0.0.1:${port}`,allowedOrigins=[origin],...options}={}){
  let continuation=null;try{const file=path.join(root,'.runtime/one-test.json');const stat=await fs.stat(file);if(!(stat.mode&0o077))continuation=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
- const app=createApp({mode,origin,allowedOrigins,budgetUsd:Number(process.env.TRIAL_BUDGET_USD||0),textKey:process.env.OPENAI_TEXT_KEY||'',imageKey:process.env.OPENAI_IMAGE_KEY||'',project:process.env.OPENAI_PROJECT||'',searchEnabled:process.env.ENABLE_SEARCH==='true',continuation,...options});
+ let acknowledgement=null;try{const file=path.join(root,'.runtime/acknowledged-unknown.json');const stat=await fs.stat(file);if(!(stat.mode&0o077))acknowledgement=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
+ const app=createApp({mode,origin,allowedOrigins,budgetUsd:Number(process.env.TRIAL_BUDGET_USD||0),textKey:process.env.OPENAI_TEXT_KEY||'',imageKey:process.env.OPENAI_IMAGE_KEY||'',project:process.env.OPENAI_PROJECT||'',searchEnabled:process.env.ENABLE_SEARCH==='true',continuation,acknowledgement,...options});
  const server=http.createServer(app.handler);server.requestTimeout=200000;server.headersTimeout=10000;
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
  console.log(`やまだやAI: ${origin} (${mode})`);return {server,app};

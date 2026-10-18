@@ -10,4 +10,4 @@ const errors=[];for(const file of files){const data=await fs.readFile(path.join(
 const findings=errors;
 if(findings.length)throw Error(`Publish check failed in ${findings.join(', ')}`);
 console.log(JSON.stringify({files:files.length,secretFindings:0,excluded:['.env*','.runtime','results','node_modules','dist','phase0'],checkedAt:new Date().toISOString()},null,2));
-if(process.argv.includes('--manifest'))await fs.writeFile(path.join(root,'.runtime/public-manifest.json'),JSON.stringify(files.sort(),null,2));
+if(process.argv.includes('--manifest')){await fs.mkdir(path.join(root,'.runtime'),{recursive:true,mode:0o700});await fs.writeFile(path.join(root,'.runtime/public-manifest.json'),JSON.stringify(files.sort(),null,2),{mode:0o600});}

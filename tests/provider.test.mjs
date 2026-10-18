@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createProvider,requestFor} from '../server/provider.mjs';
+import {createProvider,requestFor,textCost} from '../server/provider.mjs';
 import {safeTextOutput} from '../shared/contracts.mjs';
 const usage={input_tokens:100,input_tokens_details:{cached_tokens:0,cache_write_tokens:0},output_tokens:100,total_tokens:200};
 const response=(text='テスト回答',extra={})=>({model:'gpt-6-luna',status:'completed',output:[{type:'message',content:[{type:'output_text',text}]}],usage,...extra});
@@ -13,3 +13,10 @@ test('image generation is a single bounded PNG request with signature-checked PN
 test('photo edits use FormData instead of external references or files API',async()=>{const p=createProvider({...config,fetcher:async(url,init)=>{assert.equal(url,'https://api.openai.com/v1/images/edits');assert.ok(init.body instanceof FormData);assert.equal(init.body.get('image').type,'image/jpeg');assert.equal(init.body.get('n'),'1');assert.equal(init.headers['Content-Type'],undefined);return new Response(JSON.stringify({data:[{b64_json:Buffer.from([255,216]).toString('base64')}],usage:{input_tokens:1,input_tokens_details:{text_tokens:1,image_tokens:0},output_tokens:1}}));}});await p.run('image',{prompt:'背景を白く',reference:'data:image/jpeg;base64,/9j/2Q==',action:'edit'});});
 test('provider errors are not retried and raw response messages are not exposed',async()=>{let calls=0;const p=createProvider({...config,fetcher:async()=>{calls++;return new Response(JSON.stringify({error:{message:'private-debug-value'}}),{status:403});}});await assert.rejects(p.run('chat',{prompt:'test'}),e=>e.code==='PROVIDER_ERROR'&&!e.message.includes('private-debug'));assert.equal(calls,1);});
 test('POP request explicitly fixes all four papers and cannot invoke tools',()=>{for(const paper of ['a4p','a4l','a3p','a3l']){const r=requestFor('pop',{prompt:'商品情報',paper});assert.match(r.input[0].content,/固定/);assert.equal(r.text.format.strict,true);assert.deepEqual(r.tools,[]);}});
+
+test('official cache-write meter is priced separately from ordinary and cached input',()=>{
+ const usage={input_tokens:1000,input_tokens_details:{cached_tokens:300,cache_write_tokens:500},output_tokens:100,total_tokens:1100};
+ assert.equal(textCost(usage),.0001355);
+ assert.equal(textCost({...usage,input_tokens_details:{cached_tokens:600,cache_write_tokens:500}}),null);
+ assert.equal(textCost({...usage,input_tokens_details:{cached_tokens:300,cache_write_tokens:500,unknown_meter:1}}),null);
+});

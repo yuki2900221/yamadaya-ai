@@ -15,7 +15,11 @@ export class Ledger {
   if(file!==':memory:')chmodSync(file,0o600);
  }
  usage(){const r=this.db.prepare("SELECT COALESCE(SUM(CASE WHEN cost IS NULL THEN hold ELSE MAX(cost,hold) END),0) AS reserved,COALESCE(SUM(cost),0) AS calculated,COUNT(*) AS count,SUM(CASE WHEN state IN ('sending','unknown') THEN 1 ELSE 0 END) AS uncertain FROM jobs").get();return {...r,limit:this.limit};}
- reserve(id,owner,feature,search=false,requestHash='',continuation=null){
+ acknowledged(ack){
+  const rows=this.db.prepare("SELECT * FROM jobs WHERE state IN ('sending','unknown')").all();
+  return rows.length===1&&rows[0].state==='unknown'&&rows[0].id===ack?.source&&rows[0].hold===350000&&ack.hold===350000&&Number.isFinite(ack.expires)&&ack.expires>this.now();
+ }
+ reserve(id,owner,feature,search=false,requestHash='',continuation=null,acknowledgement=null){
   this.db.exec('BEGIN IMMEDIATE');
   try{
    const old=this.db.prepare('SELECT * FROM jobs WHERE id=?').get(id);
@@ -24,7 +28,8 @@ export class Ledger {
    if(u.uncertain){
     const unknown=this.db.prepare("SELECT * FROM jobs WHERE state IN ('sending','unknown')").all();
     const permitted=unknown.length===1&&unknown[0].state==='unknown'&&unknown[0].id===continuation?.source&&unknown[0].hold===350000&&continuation?.id===id&&continuation?.requestHash===requestHash&&feature==='image'&&continuation.expires>this.now();
-    if(!permitted)throw error(409,'前の処理が未確定です。管理PCで確認するまで新しい送信を停止しています。','UNCERTAIN');
+    if(unknown.some(j=>j.request_hash===requestHash))throw error(409,'未確定の操作と同じ内容は再送できません。','UNCERTAIN_DUPLICATE');
+    if(!permitted&&!this.acknowledged(acknowledgement))throw error(409,'前の処理が未確定です。管理PCで確認するまで新しい送信を停止しています。','UNCERTAIN');
    }
    if(this.db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE owner=? AND created>?").get(owner,this.now()-60000).n>=6)throw error(429,'少し待ってから操作してください。','RATE_LIMIT');
    if(u.reserved+hold>this.limit)throw error(409,'試用の費用上限に達しました。','BUDGET_LIMIT');

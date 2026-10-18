@@ -1,6 +1,10 @@
 import { safeTextOutput, PAPERS, error } from './contracts.mjs';
 const integer=n=>Number.isSafeInteger(n)&&n>=0;
-export function textCost(usage){const cached=usage?.input_tokens_details?.cached_tokens;if(!integer(usage?.input_tokens)||!integer(usage?.output_tokens)||!integer(cached)||cached>usage.input_tokens||usage.total_tokens!==usage.input_tokens+usage.output_tokens||Object.entries(usage.input_tokens_details).some(([k,v])=>k!=='cached_tokens'&&v!==0))return null;return ((usage.input_tokens-cached)*.1+cached*.01+usage.output_tokens*.5)/1e6;}
+export function textCost(usage){
+ const details=usage?.input_tokens_details,cached=details?.cached_tokens,written=details?.cache_write_tokens??0;
+ if(!integer(usage?.input_tokens)||!integer(usage?.output_tokens)||!integer(cached)||!integer(written)||cached+written>usage.input_tokens||usage.total_tokens!==usage.input_tokens+usage.output_tokens||Object.entries(details).some(([k,v])=>!['cached_tokens','cache_write_tokens'].includes(k)&&v!==0))return null;
+ return ((usage.input_tokens-cached-written)*.1+cached*.01+written*.125+usage.output_tokens*.5)/1e6;
+}
 export function imageCost(u){const a=u?.input_tokens_details,b=u?.output_tokens_details;if(!integer(u?.input_tokens)||!integer(u?.output_tokens)||!integer(a?.text_tokens)||!integer(a?.image_tokens)||a.text_tokens+a.image_tokens!==u.input_tokens||(b&&(!integer(b.image_tokens)||(b.text_tokens??0)!==0||b.image_tokens!==u.output_tokens)))return null;return(a.text_tokens*5+a.image_tokens*8+u.output_tokens*30)/1e6;}
 const popSchema={type:'object',additionalProperties:false,required:['headline','copy','direction','checks'],properties:{headline:{type:'string'},copy:{type:'string'},direction:{type:'string'},checks:{type:'array',items:{type:'string'},maxItems:4}}};
 export function requestFor(feature,input){

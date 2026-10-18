@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {Readable} from 'node:stream';
 import {randomUUID} from 'node:crypto';
-import {createApp} from '../server/index.mjs';
+import {createApp,numericUsage} from '../server/index.mjs';
 import {Ledger} from '../server/ledger.mjs';
 import {requestFor,textCost,imageCost} from '../server/provider.mjs';
 import {validateJob} from '../shared/contracts.mjs';
@@ -59,4 +59,31 @@ test('production static server never serves source, private configuration, runti
 test('bootstrap makes the global unresolved-cost pause visible to the shared UI',async t=>{
  const f=await fixture(t);const id=randomUUID();f.app.ledger.reserve(id,'prior','image',false,'dummy');f.app.ledger.finish(id,'unknown',null);
  const r=await request(f.app,{headers:{cookie:f.cookie}});assert.equal(r.json.spendingPaused,true);assert.equal(r.json.oneTestId,null);assert.equal(r.json.budgetRemainingUsd,9.65);
+});
+test('approved hold acknowledgement permits distinct work but never releases, repeats or hides new unknowns',()=>{
+ let now=1000;const db=new Ledger(':memory:',{budgetUsd:.72,now:()=>now});
+ try{
+  const source=randomUUID(),ack={source,hold:350000,expires:2000};
+  db.reserve(source,'prior','image',false,'original-pop');db.finish(source,'unknown',null);
+  assert.equal(db.acknowledged(ack),true);
+  assert.throws(()=>db.reserve(randomUUID(),'next','image',false,'original-pop',null,ack),/同じ内容/);
+  assert.throws(()=>db.reserve(randomUUID(),'next','chat',false,'distinct',null,{...ack,hold:0}),/未確定/);
+  const id=randomUUID();db.reserve(id,'next','image',false,'new-image',null,ack);db.finish(id,'succeeded',.01);
+  assert.equal(db.get(source,'prior').state,'unknown');assert.equal(db.usage().reserved,700000);
+  const text=randomUUID();db.reserve(text,'next','chat',false,'new-text',null,ack);db.finish(text,'succeeded',.001);
+  assert.throws(()=>db.reserve(randomUUID(),'next','chat',false,'over-budget',null,ack),/上限/);
+  now=2001;assert.equal(db.acknowledged(ack),false);now=1000;
+  db.finish(text,'unknown',null);assert.equal(db.acknowledged(ack),false);
+  assert.throws(()=>db.reserve(randomUUID(),'next','chat',false,'another',null,ack),/未確定/);
+ }finally{db.close();}
+});
+
+test('usage audit keeps numeric meters for diagnosis without raw strings, arrays or response content',async t=>{
+ const usage={input_tokens:10,input_tokens_details:{cached_tokens:0,unrecognized_meter:7},output_tokens:3,private_value:'fake secret response',list:['not retained']};
+ assert.deepEqual(numericUsage(usage),{input_tokens:10,input_tokens_details:{cached_tokens:0,unrecognized_meter:7},output_tokens:3});
+ const f=await fixture(t,{provider:{async run(){return {result:{text:'raw-private-output'},cost:null,usage};}}}),body=valid();
+ await request(f.app,{url:'/api/jobs',method:'POST',headers:f.headers,body});
+ const audit=await fs.readFile(path.join(f.directory,'audit',`${body.id}.json`),'utf8');
+ assert.doesNotMatch(audit,/fake secret|raw-private|not retained/);assert.equal(JSON.parse(audit).usage.input_tokens_details.unrecognized_meter,7);
+ assert.equal(f.app.ledger.get(body.id,f.app.ledger.db.prepare('SELECT owner FROM jobs WHERE id=?').get(body.id).owner).state,'unknown');
 });

@@ -105,3 +105,12 @@ test('a reviewed one-test permit can bind two retained unknown holds to one diff
   assert.throws(()=>db.reserve(randomUUID(),'c','chat',true,'another',permit),/未確定/);
  }finally{db.close();}
 });
+
+test('pre-dispatch rejection is distinct from uncertain provider failure',async t=>{
+ const f=await fixture(t);
+ for(let i=0;i<6;i++)assert.equal((await request(f.app,{url:'/api/jobs',method:'POST',headers:f.headers,body:valid()})).statusCode,200);
+ const rejected=await request(f.app,{url:'/api/jobs',method:'POST',headers:f.headers,body:valid()});
+ assert.equal(rejected.statusCode,429);assert.equal(rejected.json.code,'RATE_LIMIT');assert.equal(rejected.json.notDispatched,true);assert.equal(f.count(),6);assert.equal(f.app.ledger.usage().count,6);assert.equal(f.app.ledger.usage().uncertain,0);
+ const failure=await fixture(t,{provider:{async run(){throw Error('test offline');}}});
+ const unknown=await request(failure.app,{url:'/api/jobs',method:'POST',headers:failure.headers,body:valid()});assert.equal(unknown.json.notDispatched,false);assert.equal(failure.app.ledger.usage().uncertain,1);
+});

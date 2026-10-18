@@ -6,3 +6,5 @@
 
 /* Keep operational text readable on the pale glass surfaces. */
 .muted,.input-note,.nav-item,.help-steps{color:#5e7063}.tiny,.input-note{font-size:12px}.field-label{color:#455d4b}.nav-label,.shared-device small{color:#667a68}.mobile-nav button{color:#60765d}
+
+a.button{text-decoration:none}

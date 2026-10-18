@@ -25,6 +25,7 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
  const security={'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Frame-Options':'DENY','Cache-Control':'no-store','Permissions-Policy':'camera=(), microphone=(), geolocation=()','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"};
  function expire(){for(const[id,s]of sessions)if(s.expires<now()){sessions.delete(id);for(const[k,r]of results)if(r.owner===s.owner)results.delete(k);}}
  const handler=async(req,res)=>{
+  let dispatched=false;
   for(const[k,v]of Object.entries(security))res.setHeader(k,v);
   const json=(status,value)=>{res.statusCode=status;res.setHeader('Content-Type','application/json; charset=utf-8');res.end(JSON.stringify(value));};
   try{
@@ -75,7 +76,7 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
    if(reserved.duplicate)return json(200,publicJob(reserved.record,results.get(body.id)?.value));
    running++;
    try{
-    const generated=await ai.run(body.feature,body.input);
+    dispatched=true;const generated=await ai.run(body.feature,body.input);
     let value=generated.result;
     if(body.feature==='pop'){
      const safe=reviewProposal({info:body.input.prompt,atmosphere:'',paper:body.input.paper||'a4p',mood:({'明るく':'lively','自然に':'fresh','落ち着いて':'premium','やさしく':'friendly'})[body.input.mood||'明るく']},{headlines:[value.headline,value.headline,value.headline],catchphrase:value.copy,direction:value.direction,confirmation_points:value.checks.length?value.checks:['内容をご確認ください。']});
@@ -93,7 +94,7 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
     await fs.writeFile(path.join(directory,'diagnostics',`${body.id}.json`),JSON.stringify({name:safeCode(e.name),code:safeCode(e.code),cause:safeCode(e.cause?.code),http_status:Number.isInteger(e.status)?e.status:null}),{mode:0o600});
     throw error(e.status||502,e.status?e.message:'通信または結果を確認できません。自動では再送しません。',e.code||'RESULT_UNCERTAIN');}
    finally{running--;}
-  }catch(e){json(e.status||500,{error:e.status?e.message:'処理を完了できませんでした。',code:e.code||'INTERNAL_ERROR'});}
+  }catch(e){json(e.status||500,{error:e.status?e.message:'処理を完了できませんでした。',code:e.code||'INTERNAL_ERROR',notDispatched:!dispatched});}
  };
  return {handler,ledger,close(){ledger.close();},expire};
 }

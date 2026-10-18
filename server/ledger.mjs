@@ -27,7 +27,8 @@ export class Ledger {
    const u=this.usage(),hold=Math.round(RESERVES[feature==='chat'&&search?'chatSearch':feature]*1e6);
    if(u.uncertain){
     const unknown=this.db.prepare("SELECT * FROM jobs WHERE state IN ('sending','unknown')").all();
-    const permitted=unknown.length===1&&unknown[0].state==='unknown'&&unknown[0].id===continuation?.source&&unknown[0].hold===350000&&continuation?.id===id&&continuation?.requestHash===requestHash&&feature==='image'&&continuation.expires>this.now();
+    const sources=continuation?.sources||(continuation?.source?[{id:continuation.source,hold:350000}]:[]);
+    const permitted=sources.length>0&&unknown.length===sources.length&&unknown.every(j=>j.state==='unknown'&&sources.some(s=>s.id===j.id&&s.hold===j.hold))&&continuation?.id===id&&continuation?.requestHash===requestHash&&feature===(continuation.feature||'image')&&search===(continuation.search??false)&&continuation.expires>this.now();
     if(unknown.some(j=>j.request_hash===requestHash))throw error(409,'未確定の操作と同じ内容は再送できません。','UNCERTAIN_DUPLICATE');
     if(!permitted&&!this.acknowledged(acknowledgement))throw error(409,'前の処理が未確定です。管理PCで確認するまで新しい送信を停止しています。','UNCERTAIN');
    }

@@ -87,3 +87,21 @@ test('usage audit keeps numeric meters for diagnosis without raw strings, arrays
  assert.doesNotMatch(audit,/fake secret|raw-private|not retained/);assert.equal(JSON.parse(audit).usage.input_tokens_details.unrecognized_meter,7);
  assert.equal(f.app.ledger.get(body.id,f.app.ledger.db.prepare('SELECT owner FROM jobs WHERE id=?').get(body.id).owner).state,'unknown');
 });
+
+test('a reviewed one-test permit can bind two retained unknown holds to one different search only',()=>{
+ const db=new Ledger(':memory:',{budgetUsd:10,now:()=>1000});
+ try{
+  const first=randomUUID(),second=randomUUID(),id=randomUUID();
+  db.reserve(first,'a','image',false,'image-original');db.finish(first,'unknown',null);
+  // Recreate an already recorded second unknown; this does not dispatch any provider.
+  db.db.prepare("INSERT INTO jobs VALUES(?,?,?,'unknown',?,NULL,?,NULL,?)").run(second,'b','chat',50000,1000,'search-original');
+  const permit={sources:[{id:first,hold:350000},{id:second,hold:50000}],id,feature:'chat',search:true,requestHash:'different-search',expires:2000};
+  assert.throws(()=>db.reserve(id,'c','chat',false,'different-search',permit),/未確定/);
+  assert.throws(()=>db.reserve(id,'c','image',true,'different-search',permit),/未確定/);
+  assert.throws(()=>db.reserve(id,'c','chat',true,'search-original',{...permit,requestHash:'search-original'}),/同じ内容/);
+  db.reserve(id,'c','chat',true,'different-search',permit);db.finish(id,'succeeded',.011);
+  assert.equal(db.usage().uncertain,2);assert.equal(db.get(first,'a').hold,350000);assert.equal(db.get(second,'b').hold,50000);
+  assert.equal(db.reserve(id,'c','chat',true,'different-search',permit).duplicate,true);
+  assert.throws(()=>db.reserve(randomUUID(),'c','chat',true,'another',permit),/未確定/);
+ }finally{db.close();}
+});

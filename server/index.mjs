@@ -52,7 +52,7 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
     if(!session){const id=randomBytes(32).toString('hex');session={owner:hash(id),csrf:randomBytes(32).toString('hex'),expires:now()+sessionTtlMs};sessions.set(id,session);res.setHeader('Set-Cookie',`yamadaya_session=${id}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(sessionTtlMs/1000)}`);}
     session.expires=now()+sessionTtlMs;
     const oneTestId=continuation&&continuation.expires>now()&&!ledger.db.prepare('SELECT id FROM jobs WHERE id=?').get(continuation.id)?continuation.id:null;
-    json(200,{csrf:session.csrf,mode,capabilities:FEATURES,connected:mode==='live'&&!!textKey,imageConnected:mode==='live'&&!!imageKey,budgetRemainingUsd:demo?null:Math.max(0,(ledger.usage().limit-ledger.usage().reserved)/1e6),idleMinutes:sessionTtlMs/60000,searchEnabled:demo||searchEnabled,spendingPaused:!demo&&ledger.usage().uncertain>0&&!oneTestId&&!ledger.acknowledged(acknowledgement),oneTestId});return;
+    json(200,{csrf:session.csrf,mode,capabilities:FEATURES,connected:mode==='live'&&!!textKey,imageConnected:mode==='live'&&!!imageKey,budgetRemainingUsd:demo?null:Math.max(0,(ledger.usage().limit-ledger.usage().reserved)/1e6),idleMinutes:sessionTtlMs/60000,searchEnabled:demo||searchEnabled,oneTestFeature:oneTestId?(continuation.feature||'image'):null,spendingPaused:!demo&&ledger.usage().uncertain>0&&!oneTestId&&!ledger.acknowledged(acknowledgement),oneTestId});return;
    }
    if(!session)throw error(401,'利用時間が終了しました。画面を更新して始めてください。','SESSION_EXPIRED');
    session.expires=now()+sessionTtlMs;

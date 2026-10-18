@@ -58,7 +58,7 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
    }
    if(!session)throw error(401,'利用時間が終了しました。画面を更新して始めてください。','SESSION_EXPIRED');
    session.expires=now()+sessionTtlMs;
-   if(req.method==='GET'&&pathname.startsWith('/api/jobs/')){const id=pathname.split('/').at(-1),j=ledger.get(id,session.owner);if(!j)throw error(404,'この操作は見つかりません。');return json(200,publicJob(j,results.get(id)?.value));}
+   if(req.method==='GET'&&pathname.startsWith('/api/jobs/')){const id=pathname.split('/').at(-1),j=ledger.get(id,session.owner);if(!j)throw error(404,'この操作は見つかりません。');return json(200,{...publicJob(j,results.get(id)?.value),canStartNewOperations:j.state==='unknown'&&ledger.acknowledged(acknowledgement)});}
    const csrf=String(req.headers['x-csrf-token']||'');
    if(csrf.length!==session.csrf.length||!timingSafeEqual(Buffer.from(csrf),Buffer.from(session.csrf)))throw error(403,'画面を更新してから操作してください。','CSRF_REJECTED');
    if(pathname==='/api/end'&&req.method==='POST'){sessions.delete(sid);for(const[k,r]of results)if(r.owner===session.owner)results.delete(k);res.setHeader('Set-Cookie',`${cookieName}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);return json(200,{ended:true});}

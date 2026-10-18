@@ -16,8 +16,18 @@ export class Ledger {
  }
  usage(){const r=this.db.prepare("SELECT COALESCE(SUM(CASE WHEN cost IS NULL THEN hold ELSE MAX(cost,hold) END),0) AS reserved,COALESCE(SUM(cost),0) AS calculated,COUNT(*) AS count,SUM(CASE WHEN state IN ('sending','unknown') THEN 1 ELSE 0 END) AS uncertain FROM jobs").get();return {...r,limit:this.limit};}
  acknowledged(ack){
+  if(!ack||typeof ack!=='object'||Array.isArray(ack)||!Number.isFinite(ack.expires)||ack.expires<=this.now())return false;
+  let sources;
+  if(Object.hasOwn(ack,'sources')){
+   if(!Array.isArray(ack.sources)||Object.hasOwn(ack,'source')||Object.hasOwn(ack,'hold'))return false;
+   sources=ack.sources;
+  }else{
+   if(ack.hold!==350000)return false;
+   sources=[{id:ack.source,hold:ack.hold}];
+  }
+  if(!sources.length||sources.some(s=>!s||typeof s!=='object'||Array.isArray(s)||typeof s.id!=='string'||!s.id||!Number.isSafeInteger(s.hold)||s.hold<=0)||new Set(sources.map(s=>s.id)).size!==sources.length)return false;
   const rows=this.db.prepare("SELECT * FROM jobs WHERE state IN ('sending','unknown')").all();
-  return rows.length===1&&rows[0].state==='unknown'&&rows[0].id===ack?.source&&rows[0].hold===350000&&ack.hold===350000&&Number.isFinite(ack.expires)&&ack.expires>this.now();
+  return rows.length===sources.length&&rows.every(j=>j.state==='unknown'&&sources.some(s=>s.id===j.id&&s.hold===j.hold));
  }
  reserve(id,owner,feature,search=false,requestHash='',continuation=null,acknowledgement=null){
   this.db.exec('BEGIN IMMEDIATE');

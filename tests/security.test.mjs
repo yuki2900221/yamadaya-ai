@@ -16,8 +16,8 @@ async function request(app,{url='/api/session',method='GET',body,headers={},addr
  const response={headers:{},statusCode:200,setHeader(k,v){this.headers[k.toLowerCase()]=v;},end(bytes){this.body=bytes==null?'':Buffer.from(bytes).toString('utf8');}};
  await app.handler(req,response);try{response.json=JSON.parse(response.body);}catch{}return response;
 }
-async function fixture(t,options={}){const directory=await fs.mkdtemp(path.join(os.tmpdir(),'yamadaya-shared-test-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));let count=0;const app=createApp({mode:'live',budgetUsd:10,directory,origin,textKey:'test-key-no-secret',imageKey:'test-image-key',provider:{async run(){count++;return {result:{text:'テストの回答',sources:[]},cost:.001};}},...options});t.after(()=>app.close());const r=await request(app);const cookie=r.headers['set-cookie'].split(';')[0],csrf=r.json.csrf;return {app,cookie,csrf,headers:{cookie,'x-csrf-token':csrf},count:()=>count,directory};}
-test('shared bootstrap offers only four features and an opaque HttpOnly session',async t=>{const f=await fixture(t);const r=await request(f.app,{headers:{cookie:f.cookie}});assert.deepEqual(r.json.capabilities,['chat','writing','pop','image']);assert.match(f.cookie,/yamadaya_session=[a-f0-9]{64}/);assert.doesNotMatch(r.body,/test-key|Authorization|\.runtime|project/);assert.equal(r.headers['cache-control'],'no-store');assert.match(r.headers['content-security-policy'],/frame-ancestors 'none'/);});
+async function fixture(t,options={}){const directory=await fs.mkdtemp(path.join(os.tmpdir(),'yamadaya-shared-test-'));t.after(()=>fs.rm(directory,{recursive:true,force:true}));let count=0;const app=createApp({mode:'live',budgetUsd:10,directory,origin,textKey:'test-key-no-secret',imageKey:'test-image-key',provider:{async run(){count++;return {result:{text:'テストの回答',sources:[]},cost:.001};}},...options});t.after(()=>app.close());const r=await request(app,{headers:{host:new URL(options.origin||origin).host}});const initialCookieHeader=r.headers['set-cookie'],cookie=initialCookieHeader.split(';')[0],csrf=r.json.csrf;return {app,cookie,initialCookieHeader,csrf,headers:{cookie,'x-csrf-token':csrf},count:()=>count,directory};}
+test('shared bootstrap offers only four features and an opaque HttpOnly session',async t=>{const f=await fixture(t);const r=await request(f.app,{headers:{cookie:f.cookie}});assert.deepEqual(r.json.capabilities,['chat','writing','pop','image']);assert.match(f.cookie,/yamadaya_session_[a-f0-9]{16}=[a-f0-9]{64}/);assert.match(f.initialCookieHeader,/; HttpOnly; SameSite=Strict; Path=\/$/);assert.doesNotMatch(f.initialCookieHeader,/Max-Age|Expires/i);assert.doesNotMatch(r.body,/test-key|Authorization|\.runtime|project/);assert.equal(r.headers['cache-control'],'no-store');assert.match(r.headers['content-security-policy'],/frame-ancestors 'none'/);});
 for(const path of ['/api/admin','/api/config','/api/keys','/api/employees','/api/customers','/api/files','/api/database','/api/history','/api/pop-series','/api/jobs/../../admin'])test(`privileged path ${path} is denied server-side`,async t=>{const f=await fixture(t);const r=await request(f.app,{url:path,headers:f.headers});assert.equal(r.statusCode,403);assert.equal(f.count(),0);});
 for(const [name,options]of [['remote address',{address:'192.0.2.1'}],['unexpected host',{headers:{host:'evil.test'}}],['cross origin',{headers:{origin:'https://evil.test'}}]])test(`${name} is denied before session creation`,async t=>{const f=await fixture(t);const r=await request(f.app,options);assert.equal(r.statusCode,403);assert.equal(r.headers['set-cookie'],undefined);});
 test('missing session, Origin, CSRF and wrong content type cannot dispatch',async t=>{const f=await fixture(t);for(const [headers,expected]of [[{},401],[{cookie:f.cookie},403],[{...f.headers,origin:''},403],[{...f.headers,'x-csrf-token':'0'.repeat(64)},403],[{...f.headers,'content-type':'text/plain'},415]]){const r=await request(f.app,{url:'/api/jobs',method:'POST',body:valid(),headers});assert.equal(r.statusCode,expected);}assert.equal(f.count(),0);});
@@ -26,6 +26,40 @@ test('duplicate operation and recovery return saved output without redispatch',a
 test('another shared session cannot view or reuse a previous session operation',async t=>{const f=await fixture(t),body=valid();await request(f.app,{url:'/api/jobs',method:'POST',body,headers:f.headers});const other=await request(f.app);const headers={cookie:other.headers['set-cookie'].split(';')[0],'x-csrf-token':other.json.csrf};assert.equal((await request(f.app,{url:`/api/jobs/${body.id}`,headers})).statusCode,404);assert.equal((await request(f.app,{url:'/api/jobs',method:'POST',body,headers})).statusCode,404);assert.equal(f.count(),1);});
 test('end invalidates shared session/output while keeping cost audit',async t=>{const f=await fixture(t),body=valid();await request(f.app,{url:'/api/jobs',method:'POST',body,headers:f.headers});assert.equal((await request(f.app,{url:'/api/end',method:'POST',headers:f.headers})).statusCode,200);assert.equal((await request(f.app,{url:`/api/jobs/${body.id}`,headers:f.headers})).statusCode,401);assert.equal(f.app.ledger.usage().count,1);assert.equal(f.app.ledger.usage().calculated,1000);});
 test('idle expiration rejects previous access and clears result availability',async t=>{let now=100;const f=await fixture(t,{now:()=>now,sessionTtlMs:1000}),body=valid();await request(f.app,{url:'/api/jobs',method:'POST',body,headers:f.headers});now+=1001;assert.equal((await request(f.app,{url:`/api/jobs/${body.id}`,headers:f.headers})).statusCode,401);});
+test('browser session cookie allows sliding activity past the initial lifetime but idle expiry removes output',async t=>{
+ let now=100;const f=await fixture(t,{now:()=>now,sessionTtlMs:1000}),body=valid();
+ assert.doesNotMatch(f.initialCookieHeader,/Max-Age|Expires/i);
+ await request(f.app,{url:'/api/jobs',method:'POST',body,headers:f.headers});
+ assert.equal(f.app.retainedResultCount,1);
+ now=1000;const refreshed=await request(f.app,{headers:{cookie:f.cookie}});
+ assert.equal(refreshed.statusCode,200);assert.equal(refreshed.json.csrf,f.csrf);
+ // Both later reads are beyond the preceding lifetime measured from creation.
+ for(now of [1800,2600]){const r=await request(f.app,{url:`/api/jobs/${body.id}`,headers:f.headers});assert.equal(r.statusCode,200);assert.equal(r.json.result.text,'テストの回答');}
+ assert.equal(f.count(),1);assert.equal(f.app.retainedResultCount,1);
+ now=3601;assert.equal((await request(f.app,{url:`/api/jobs/${body.id}`,headers:f.headers})).statusCode,401);
+ assert.equal(f.app.retainedResultCount,0);assert.equal(f.app.ledger.usage().calculated,1000);
+ const next=await request(f.app);assert.notEqual(next.headers['set-cookie'].split(';')[0],f.cookie);assert.notEqual(next.json.csrf,f.csrf);
+});
+for(const endedBy of ['end','idle'])test(`a provider result completed after session ${endedBy} is discarded while its successful cost audit is retained`,async t=>{
+ let now=100,release,started;const gate=new Promise(resolve=>release=resolve),ready=new Promise(resolve=>started=resolve);let calls=0;
+ const output='終了済みの利用へ返してはいけないダミー回答';
+ const f=await fixture(t,{now:()=>now,sessionTtlMs:1000,provider:{async run(){calls++;started();await gate;return {result:{text:output},cost:.001,usage:{input_tokens:1,output_tokens:1}};}}}),body=valid();
+ const pending=request(f.app,{url:'/api/jobs',method:'POST',body,headers:f.headers});
+ await ready;
+ try{
+  if(endedBy==='end')assert.equal((await request(f.app,{url:'/api/end',method:'POST',headers:f.headers})).statusCode,200);
+  else now=1101; // No intervening request: completion must notice the expired session itself.
+ }finally{release();}
+ const response=await pending;
+ assert.equal(response.statusCode,401);assert.equal(response.json.code,'SESSION_EXPIRED');assert.equal(response.json.notDispatched,false);assert.equal(response.json.result,undefined);assert.ok(!response.body.includes(output));
+ assert.equal(f.app.retainedResultCount,0);assert.equal(calls,1);
+ const record=f.app.ledger.db.prepare('SELECT state,cost,hold FROM jobs WHERE id=?').get(body.id);
+ assert.equal(record.state,'succeeded');assert.equal(record.cost,1000);assert.equal(record.hold,15000);assert.equal(f.app.ledger.usage().uncertain,0);
+ const audit=JSON.parse(await fs.readFile(path.join(f.directory,'audit',`${body.id}.json`),'utf8'));assert.equal(audit.calculatedUsd,.001);assert.ok(!JSON.stringify(audit).includes(output));
+ assert.equal((await request(f.app,{url:`/api/jobs/${body.id}`,headers:f.headers})).statusCode,401);
+ const next=await request(f.app),headers={cookie:next.headers['set-cookie'].split(';')[0],'x-csrf-token':next.json.csrf};
+ assert.equal((await request(f.app,{url:`/api/jobs/${body.id}`,headers})).statusCode,404);assert.equal(f.app.retainedResultCount,0);
+});
 test('provider failure remains unknown and blocks new calls including after restart',async t=>{const f=await fixture(t,{provider:{async run(){throw Error('sensitive-provider-raw-error');}}});const r=await request(f.app,{url:'/api/jobs',method:'POST',headers:f.headers,body:valid()});assert.equal(r.statusCode,502);assert.doesNotMatch(r.body,/sensitive-provider/);assert.equal(f.app.ledger.usage().uncertain,1);assert.equal((await request(f.app,{url:'/api/jobs',method:'POST',headers:f.headers,body:valid()})).statusCode,409);});
 test('parallel operations do not both dispatch',async t=>{let release;const gate=new Promise(r=>release=r);let calls=0;const f=await fixture(t,{provider:{async run(){calls++;await gate;return {result:{text:'ok'},cost:.001};}}});const first=request(f.app,{url:'/api/jobs',method:'POST',headers:f.headers,body:valid()});while(!calls)await new Promise(r=>setTimeout(r,1));const r=await request(f.app,{url:'/api/jobs',method:'POST',headers:f.headers,body:valid()});assert.equal(r.statusCode,429);release();assert.equal((await first).statusCode,200);assert.equal(calls,1);});
 test('missing or oversized usage/cost does not become zero or unblock spending',async t=>{for(const cost of [null,.4,NaN,-1]){const f=await fixture(t,{provider:{async run(){return {result:{text:'bad cost'},cost};}}});const r=await request(f.app,{url:'/api/jobs',method:'POST',headers:f.headers,body:valid()});assert.equal(r.statusCode,409);assert.equal(f.app.ledger.usage().uncertain,1);}});
@@ -113,4 +147,19 @@ test('pre-dispatch rejection is distinct from uncertain provider failure',async 
  assert.equal(rejected.statusCode,429);assert.equal(rejected.json.code,'RATE_LIMIT');assert.equal(rejected.json.notDispatched,true);assert.equal(f.count(),6);assert.equal(f.app.ledger.usage().count,6);assert.equal(f.app.ledger.usage().uncertain,0);
  const failure=await fixture(t,{provider:{async run(){throw Error('test offline');}}});
  const unknown=await request(failure.app,{url:'/api/jobs',method:'POST',headers:failure.headers,body:valid()});assert.equal(unknown.json.notDispatched,false);assert.equal(failure.app.ledger.usage().uncertain,1);
+});
+
+
+test('two local ports keep independent cookies, CSRF and session endings',async t=>{
+ const first=await fixture(t),otherOrigin='http://127.0.0.1:4177',second=await fixture(t,{origin:otherOrigin});
+ const r2=await request(second.app,{headers:{host:'127.0.0.1:4177'}}),cookie2=r2.headers['set-cookie'].split(';')[0];
+ assert.notEqual(first.cookie.split('=')[0],cookie2.split('=')[0]);
+ const sharedCookies=first.cookie+'; '+cookie2;
+ const secondHeaders={cookie:sharedCookies,host:'127.0.0.1:4177',origin:otherOrigin,'x-csrf-token':r2.json.csrf};
+ assert.equal((await request(first.app,{url:'/api/jobs',method:'POST',headers:{...first.headers,cookie:sharedCookies},body:valid()})).statusCode,200);
+ assert.equal((await request(second.app,{url:'/api/jobs',method:'POST',headers:secondHeaders,body:valid()})).statusCode,200);
+ const ended=await request(second.app,{url:'/api/end',method:'POST',headers:secondHeaders});assert.equal(ended.statusCode,200);assert.ok(ended.headers['set-cookie'].startsWith(cookie2.split('=')[0]+'=;'));
+ assert.equal((await request(first.app,{url:'/api/jobs',method:'POST',headers:{...first.headers,cookie:sharedCookies},body:valid()})).statusCode,200);
+ assert.equal((await request(second.app,{url:'/api/jobs',method:'POST',headers:secondHeaders,body:valid()})).statusCode,401);
+ assert.equal((await request(first.app,{url:'/api/jobs',method:'POST',headers:{...first.headers,cookie:cookie2},body:valid()})).statusCode,401);
 });

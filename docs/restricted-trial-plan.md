@@ -1,6 +1,6 @@
 # 2端末限定の試用接続計画と進捗
 
-最新: 指定会社メール1件の登録AllowとWindows専用profileを保存確認。One-time PINを追加し、Enrollmentの認証方法をOTPだけに限定、特定tokenのService Authを維持した状態を再読込で確認した。端末番号2件・単一ホスト/TCP8443のGateway制限、モックTunnelとprivate routeは前段で保存済み。Windows本人のコード入力・端末登録、HTTPS信頼・名前解決と接続/拒否/失効の実機検証は未完了。以下は履歴を含み、末尾の追記を優先する。
+最新: Windows初回登録完了の本人申告後、Cloudflareの端末1台・有効registration1件・指定会社メール・専用Last active profile・Disconnectedを照合。登録時刻付近のserialチェックPassedとprofile側の適用1台・Include2宛先・自動接続Offを確認した。Mac登録、HTTPS信頼・名前解決と接続/拒否/失効の実機検証は未完了。2台が揃うまで新規登録口は維持し、今回設定変更・実API実行0。以下は履歴を含み、末尾の追記を優先する。
 
 確認日: 2026-10-19。対象はこのMacと会社共用PC 1台（Windows 11 / Chrome）。従業員ごとのログインを要求しない。会社ドメイン `superyamadaya.com` はWix DNSのまま維持する。
 
@@ -161,3 +161,13 @@ Access Applicationsが初回作成画面で既存アプリを表示しないこ�
 Windowsでは403の古いタブを閉じ、WARPアプリからチーム名を入力する初回登録をやり直す。指定メールでコードを受け取り、本人がWindows画面へ入力する。裸の`/warp` URLや古い認証URLの再利用を案内しない。登録後は接続Offのまま端末・適用profile・postureを管理側で照合する。403画像だけから個別リクエストの拒否原因を断定せず、登録成功は実際の結果待ちとする。
 
 今回の実測は管理画面の保存・再読込確認のみ。Windows登録・接続/拒否/失効、証明書信頼、名前解決、11項目の実機試験は未実施。実API0、追加契約・入金・Wix DNS変更なし。既存アプリ・台帳・キー・$10上限・unknown3件$0.45・元の試用期限を維持した。
+
+### Windows登録後の照合（最新）
+
+2026-10-19、ユーザーから会社Windowsの登録完了・接続OFFの申告を受けた。11:14 JST頃のCloudflare管理画面で、フィルターなしの端末一覧が1台・registration 1件であること、指定会社メールとWindows専用Last active device profileの一致を確認した。端末詳細のClientはDisconnected、Platformはwindows、OS Versionは10.0.22631 / UBR 6199、Client versionは2026.8.2110、有効registrationは1件。Last seenは11:13頃だった。実メール・端末名・端末ID・serial・IPは公開記録に転記していない。
+
+同じ端末のPosture checksで、承認済みserialリストを用いる既存チェックがPassed、Last runは同日11:12 JST、Connected policiesは1と表示された。これは登録時刻付近に収集された判定記録の確認であり、OFF中の継続更新や、Gateway経由通信の実測ではない。公式仕様ではposture結果は新データで上書きされるまで保持され、Gatewayに追加キャッシュ遅延があるため、接続試験時に時刻と判定を再確認する。[公式Posture checks](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/)
+
+Windows専用profileのdetailsもEnabled / 1 deviceで同じ端末を表示。会社メール完全一致AND Windows、Traffic and DNS / MASQUE、Split Tunnels Include、Auto connect Disabled、interface IP DNS registration Disabled、試用ホストとteam domainの2宛先、Local Domain Fallback 14件を確認した。Last activeの確認は管理画面の取得済profileの証拠であり、端末側CLIの現在設定や実経路まで確認したとは扱わない。[公式Device profile確認](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/configure/device-profiles/#verify-device-profile)
+
+当該組織の一覧にMacはまだない。Mac側の登録とHTTPS信頼・origin名前解決を整えた後、Windows接続を明示案内し、モック到達・新しいposture/通信ログ・拒否/失効・業務影響を試験する。2台登録前なのでメール/tokenの登録口はまだ閉じていない。Windowsの実機11項目も未合格のまま。今回は読み取りだけでCloudflare設定変更0、実API0。費用上限・保留額・期限と既存アプリは維持した。

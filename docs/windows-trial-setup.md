@@ -1,19 +1,19 @@
 # Windows 11 / Chrome 初回設定チェックリスト（案）
 
-更新日: 2026-10-19（日本時間）。会社共用PC 1台を対象とする、管理者向けの準備資料。**Windowsの組織登録・接続・下記実機試験は未実施**。Windowsの最新登録方式は、下記の初回管理者OTP方式を優先する。組織名と証明書の確認方法は、設定の準備が完了してから個別に案内する。
+更新日: 2026-10-19（日本時間）。会社共用PC 1台を対象とする、管理者向けの準備資料。**Windowsの組織登録は管理画面で照合済み。接続はOffで、経路・HTTPS等の実機11項目は未実施**。Windowsの登録方式は初回管理者OTP。組織名と証明書の確認方法は個別に案内し、実値を公開しない。
 
 要求・許可範囲は[試用版要求](requirements.md)、全体構成と最新状態は[2端末限定試用計画](restricted-trial-plan.md)、費用と期間は[最新報告](all-features-week-trial.md)を正本とする。本書は現地作業と実機の合否記録に限る。
 
-会社管理メールはユーザーから1件指定済み。その1件の登録許可とWindows用profileの条件更新、One-time PIN追加とEnrollmentのOTP限定を保存・確認済み。Windows本人のコード入力と登録結果はこれから。現在の案内は末尾の「指定済み会社管理メールへの切替」を優先する。
+指定会社メール1件の登録許可・Windows用profile・OTP限定を設定し、ユーザーが初回登録を完了した。主担当も登録・最後に取得されたprofile・postureの表示を照合済み。接続Offの状態を維持しており、現在の判定は末尾の「Windows登録と最後に取得された設定の照合」を優先する。
 
 ## 最新の登録方式と準備状況
 
 - USBを利用できないため、**Windowsの初回登録だけ、ユーザーが指定した会社管理メール1件へのOTPで本人が認証する方式を承認済み**。主担当が当該1件のAllow policy保存とEnrollmentへの適用、OTP追加と認証方法の限定を確認した。メールアドレス・OTP・組織名の実値は本書へ記載しない。
 - Gatewayは、許可リストのシリアル番号2件・試験用単一ホスト・TCP 8443だけのAllowと、その下位のTunnel Blockを保存し、順序を確認済み。モック用TunnelはHealthy、private hostnameのrouteは1件追加済み。これらは管理側の設定確認であり、Windowsからの到達・拒否を実測した結果ではない。
-- Windows専用Include profileは、指定会社メールの完全一致AND Windowsの条件更新を管理画面で確認済み。実機への適用は未確認。会社PCの既存の組織登録・管理設定を先に確認してから、初回登録を行う。アプリの接続開始は端末照合後とする。
+- Windows専用Include profileは、指定会社メールの完全一致AND Windowsを保持。管理画面で対象1台とLast active profileの一致を照合した。これは最後に取得された設定の証拠であり、接続後の適用・経路の合格とは区別する。
 - Windows用の登録helperとXMLは**未配布・未実行で、配布案は保留**。Windowsでは秘密値を渡す旧手順を進めない。
 - 通常の従業員ログイン不要は維持する。公式には、Gatewayのclient session期限を指定しなければ既定で無期限となるため、初回登録と毎日のログインは分けて扱える。実際の再認証設定の確認と、Windowsの再起動・再接続試験は未実施。[公式Client sessions](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/configure/client-sessions/)
-- 対象2台の登録・postureを照合したら、メールとTokenによる新規登録許可を閉じる。登録許可の閉鎖後も両端末を再起動して確認する。登録状態は削除まで持続する公式仕様だが、実機の再接続成功を先取りしない。[公式Device registration](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/device-registration/)
+- 一覧にある端末はWindows 1台だけで、Macの登録は表示されていない。対象2台の登録・postureを照合する前のため、メールとTokenによる新規登録許可はまだ閉じていない。2台確認後に閉じ、両端末の再起動・再接続を試す。登録状態は削除まで持続する公式仕様だが、実機の再接続成功を先取りしない。[公式Device registration](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/device-registration/)
 
 ## 前段の準備記録（登録方式は上記を優先）
 
@@ -44,15 +44,15 @@ Get-CimInstance Win32_BIOS | Select-Object -ExpandProperty SerialNumber
 
 - [ ] 表示されたシリアル番号を管理者が会社PCの識別情報と照合する。空欄・汎用値・重複などで1台を識別できなければ許可リストに追加せず、代替の端末識別を検証する。
 - [x] ユーザーが値をCloudflareの試験用「Serial numbers」リストへ直接入力し、主担当が件数2件を確認した。**公開チャット、GitHub、公開スクリーンショットには実値を記録しない**。
-- [ ] 登録後、Windowsのpostureが当該リストに一致することをCloudflare管理画面とログで確認する。シリアル番号は暗号学的な端末証明ではなく、OS管理者による改変等に対する限界を残す。[公式のシリアル番号手順](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/corp-device/)
+- [x] 登録後、管理画面で許可端末リストのpostureがPassed（最終実行2026-10-19 11:12 JST）と表示されることを確認した。接続後の更新は別途再確認する。シリアル番号は暗号学的な端末証明ではなく、OS管理者による改変等に対する限界を残す。[公式のシリアル番号手順](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/corp-device/)
 
 ## 組織への初回登録（Windowsは初回管理者OTP）
 
 - [x] 管理者側で、対象2件のシリアル番号・単一ホスト・TCP 8443だけのAllowと、その下位のTunnel Blockを保存して順序を確認した。組織へ登録できることとアプリに接続できることは別に実機検証する。
-- [x] Windows用Include profileの条件を、指定会社メールの完全一致AND Windowsへ更新したことを管理画面で確認した。Windows実機への適用は未確認。
+- [x] Windows用Include profileの指定会社メール完全一致AND Windows条件と、対象端末1台・Last active profileの一致を管理画面で確認した。接続後の設定取得・適用は再確認する。
 - [x] Access Applicationsの初回作成画面を確認後One-time PINを追加。Enrollmentは全IdP許可Off・OTPだけ・instant authentication Onとして保存し、再読込で確認。既存の特定token Service Authを保持した。
-- [ ] 既存の会社用組織登録がないことを確認後、管理者が承認済みメール1件のOTPで初回登録する。コードをチャットや従業員へ渡さない。helper/XMLの配布やService Tokenの手入力で進めない。
-- [ ] Cloudflare One Clientが会社の正しいZero Trust組織へ登録されたことを管理者が照合する。一般向けの1.1.1.1接続だけでは完了にしない。
+- [x] ユーザーが指定会社メールによる初回登録完了と接続Offを申告した。コード共有、helper/XMLの配布やService Tokenの手入力は行っていない。
+- [x] 主担当が会社の管理画面でWindowsの登録1件・active registration 1件・指定メール一致を照合し、Client Disconnectedを確認した。一般向け1.1.1.1の接続表示を根拠にはしていない。
 - [ ] Cloudflare管理画面の対象登録とpostureをWindows実機と照合し、対象がMacとWindowsの2台だけであることを確認する。2台登録後はメール・Tokenの新規登録許可を閉じ、再起動・再接続の正常動作を試す。
 
 posture検査は登録後に行われ、登録許可そのものでは利用できない。OTPで登録できることを2端末限定の接続許可の代わりにはしない。旧Service Token方式の公式要件は前段の参考資料として保持する。[登録許可](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/device-enrollment/)・[管理設定パラメーター](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/mdm-deployment/parameters/)
@@ -101,7 +101,7 @@ Windows用Include profileを独立作成して保存後のdetailsで確認した
 
 会社PCに私用Googleアカウントを使わない方針を受け、会社管理メールによる初回OTPへ変更した。私用メールの一時登録許可は適用対象から削除・保存確認済み。この時点では会社アドレスが未受領でWindows登録を止めていた。会社PCにGoogleのログイン状態を作ることは求めず、メール実値も公開文書には記入しない。
 
-### 指定済み会社管理メールへの切替（最新・登録結果待ち）
+### 指定済み会社管理メールへの切替（登録前の履歴）
 
 ユーザーが指定した会社管理メール1件のAllow policy保存・Enrollmentへの適用と、Windows専用profileのメール完全一致AND Windows条件への更新を、主担当が管理画面で確認した。
 
@@ -109,4 +109,14 @@ Windows用Include profileを独立作成して保存後のdetailsで確認した
 
 Windowsで403の古いタブを閉じ、WARPアプリからチーム名を入力して登録をやり直す。指定メールでコードを受信し、本人がWindowsの登録画面へ入力する。GoogleやCloudflare管理画面へのログイン、OTPのチャット共有は不要。完了したら接続Offのまま、管理側で端末・適用profile・postureを照合する。
 
-Windowsの実登録はまだ確認していない。上のWindows実機11項目はすべて未実施のまま維持する。メール、秘密値、シリアル番号、画面内の接続識別情報は公開しない。
+この時点ではWindowsの登録結果待ちだった。後続の照合結果を次節へ記録する。メール、秘密値、シリアル番号、画面内の接続識別情報は公開しない。
+
+### Windows登録と最後に取得された設定の照合（最新）
+
+2026-10-19 11:14 JST頃、ユーザーの「登録できた・接続Off」との申告後、主担当がCloudflareの管理画面を読み取り確認した。端末一覧はWindows 1台、active registration 1件で、指定会社メールと一致。Platformはwindows、OSは10.0.22631 / UBR 6199、clientは2026.8.2110、Client Disconnectedだった。Macの登録は一覧にない。
+
+Last active profileはWindows専用profileと一致し、profileのdetailsでもEnabled・対象1台を確認した。同profileの管理側設定はTraffic + DNS / MASQUE / Include、auto-connect Disabled、interface DNS registration Disabled。Includeの宛先は単一試用ホストとteam domainの計2件で、会社メールの完全一致AND Windows条件を保持している。端末側CLIによる現在設定の照合はまだ行っていない。
+
+許可端末リスト（既存のシリアル番号2件）のpostureはPassed、Last runは11:12 JST、Connected policiesは1と表示された。これはその時点の登録・設定取得・posture表示の証拠であり、接続Off中の継続更新やGateway経路の合格を示さない。接続開始後にprofileの取得・postureの更新・対応するGatewayログを再確認し、HTTPS表示、拒否・失効、再起動等の実機11項目を試す必要がある。
+
+対象2台が揃っていないため、新規登録許可は未閉鎖。今回の作業ではWeb設定変更・実API呼び出しは0件。登録の照合を理由に、実機11項目の未実施判定は変更しない。実際のメール、端末名・ID、シリアル番号等は記載しない。

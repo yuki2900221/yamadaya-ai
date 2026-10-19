@@ -1,5 +1,7 @@
 # 全機能再開と1週間・2端末試用の準備
 
+2026-10-19 11:14 JST確認: Windowsの登録完了・接続OFFの本人申告を、Cloudflareの登録1台/registration1件・会社メール・Windows専用Last active profile・Disconnected表示で照合。serialチェックは同日11:12の記録でPassed。専用profileは適用1台、Include2宛先、自動接続Off等を確認した。Macは当該組織へまだ未登録で、HTTPSと経路/拒否/失効の実機検証は残る。今回のクラウド設定変更・実API実行0。[確認結果と限界](restricted-trial-plan.md#windows登録後の照合最新)。下記は履歴。
+
 2026-10-19最新: 会社管理メール1件のAllow・Windows専用profile更新を保存確認し、One-time PINを追加した。Enrollmentは全IdP許可をOff、OTPだけを選択し、既存の特定token Service Authを残した状態を再読込で確認。Windowsでの初回コード入力・端末登録・実機11項目は未実施。実API0、既存アプリ/台帳/キー/$10上限/unknown3件$0.45/試用期限は変更なし。[設定結果と残件](restricted-trial-plan.md#会社管理メールとotpの設定完了最新)。以下は履歴。
 
 2026-10-19 Windows初回登録の案内時点: 管理者メール1件の一時登録許可と、Windows専用Include profile（メール完全一致AND Windows）を保存・確認した。Mac用は元のtoken条件を維持。USB/秘密ファイル配布は使わず、ユーザーがWindowsでOTP初回登録する手順を案内し、結果待ち。接続/拒否/失効の実機合格はまだない。

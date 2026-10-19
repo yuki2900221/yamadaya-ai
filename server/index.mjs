@@ -1,7 +1,11 @@
 import http from 'node:http';
+import https from 'node:https';
+import { createSecureContext } from 'node:tls';
+import { constants } from 'node:fs';
+import { isIP } from 'node:net';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomBytes, createHash, timingSafeEqual, X509Certificate, createPrivateKey } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { Ledger } from './ledger.mjs';
 import { createProvider } from './provider.mjs';
@@ -15,6 +19,20 @@ export function numericUsage(value,depth=0){
  if(!value||typeof value!=='object'||Array.isArray(value)||depth>=3)return undefined;
  return Object.fromEntries(Object.entries(value).filter(([k])=>/^[a-z_]{1,60}$/.test(k)).map(([k,v])=>[k,numericUsage(v,depth+1)]).filter(([,v])=>v!==undefined));
 }
+const diagnosticReasons=new Set(['unexpected_model','incomplete_response','unexpected_output_type','tool_call_limit','unrequested_search','missing_search_call','search_not_completed','unexpected_search_action','refused','invalid_response']);
+const diagnosticCounts={outputTypeCounts:['message','reasoning','web_search_call','other'],searchActionCounts:['search','open_page','find_in_page','other'],searchStatusCounts:['completed','failed','incomplete','in_progress','searching','other']};
+function structuralDiagnostic(value){
+ if(!value||typeof value!=='object'||Array.isArray(value))return undefined;
+ const safe={},count=n=>Number.isSafeInteger(n)&&n>=0&&n<=10000;
+ if(Object.hasOwn(value,'reason')&&diagnosticReasons.has(value.reason))safe.reason=value.reason;
+ if(Object.hasOwn(value,'searchCallCount')&&count(value.searchCallCount))safe.searchCallCount=value.searchCallCount;
+ for(const [field,keys]of Object.entries(diagnosticCounts)){
+  const source=value[field];
+  if(!Object.hasOwn(value,field)||!source||typeof source!=='object'||Array.isArray(source))continue;
+  safe[field]=Object.fromEntries(keys.filter(key=>Object.hasOwn(source,key)&&count(source[key])).map(key=>[key,source[key]]));
+ }
+ return Object.keys(safe).length?safe:undefined;
+}
 const loopback=a=>['127.0.0.1','::1','::ffff:127.0.0.1'].includes(a);
 const publicJob=(record,result)=>({id:record.id,state:record.state,result:record.state==='succeeded'?result||null:null,message:record.state==='unknown'?'結果または課金が未確定です。自動で再送しません。':record.state==='sending'?'作成しています。':'',billing:record.state==='succeeded'?'usage計算・請求未照合':'未確定'});
 export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(root,'.runtime'),provider,origin='http://127.0.0.1:4176',allowedOrigins=[origin],sessionTtlMs=15*60*1000,now=()=>Date.now(),textKey='',imageKey='',project='',searchEnabled=false,continuation=null,acknowledgement=null}={}){
@@ -23,6 +41,7 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
  const ai=provider||(demo?createDemoProvider():createProvider({textKey,imageKey,project,searchEnabled}));
  const sessions=new Map(),results=new Map(); let running=0;
  const cookieName=`yamadaya_session_${hash(`${mode}:${origin}`).slice(0,16)}`;
+ const cookieAttributes=`HttpOnly; SameSite=Strict; Path=/${new URL(origin).protocol==='https:'?'; Secure':''}`;
  const security={'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Frame-Options':'DENY','Cache-Control':'no-store','Permissions-Policy':'camera=(), microphone=(), geolocation=()','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"};
  function expire(){for(const[id,s]of sessions)if(s.expires<now()){sessions.delete(id);for(const[k,r]of results)if(r.owner===s.owner)results.delete(k);}}
  const handler=async(req,res)=>{
@@ -51,7 +70,7 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
    const sid=(req.headers.cookie||'').match(new RegExp(`(?:^|;\\s*)${cookieName}=([a-f0-9]{64})(?:;|$)`))?.[1];
    let session=sessions.get(sid);
    if(pathname==='/api/session'&&req.method==='GET'){
-    if(!session){const id=randomBytes(32).toString('hex');session={owner:hash(id),csrf:randomBytes(32).toString('hex'),expires:now()+sessionTtlMs};sessions.set(id,session);res.setHeader('Set-Cookie',`${cookieName}=${id}; HttpOnly; SameSite=Strict; Path=/`);}
+    if(!session){const id=randomBytes(32).toString('hex');session={owner:hash(id),csrf:randomBytes(32).toString('hex'),expires:now()+sessionTtlMs};sessions.set(id,session);res.setHeader('Set-Cookie',`${cookieName}=${id}; ${cookieAttributes}`);}
     session.expires=now()+sessionTtlMs;
     const oneTestId=continuation&&continuation.expires>now()&&!ledger.db.prepare('SELECT id FROM jobs WHERE id=?').get(continuation.id)?continuation.id:null;
     json(200,{csrf:session.csrf,mode,capabilities:FEATURES,connected:mode==='live'&&!!textKey,imageConnected:mode==='live'&&!!imageKey,budgetRemainingUsd:demo?null:Math.max(0,(ledger.usage().limit-ledger.usage().reserved)/1e6),idleMinutes:sessionTtlMs/60000,searchEnabled:demo||searchEnabled,oneTestFeature:oneTestId?(continuation.feature||'image'):null,spendingPaused:!demo&&ledger.usage().uncertain>0&&!oneTestId&&!ledger.acknowledged(acknowledgement),oneTestId});return;
@@ -61,7 +80,7 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
    if(req.method==='GET'&&pathname.startsWith('/api/jobs/')){const id=pathname.split('/').at(-1),j=ledger.get(id,session.owner);if(!j)throw error(404,'この操作は見つかりません。');return json(200,{...publicJob(j,results.get(id)?.value),canStartNewOperations:j.state==='unknown'&&ledger.acknowledged(acknowledgement)});}
    const csrf=String(req.headers['x-csrf-token']||'');
    if(csrf.length!==session.csrf.length||!timingSafeEqual(Buffer.from(csrf),Buffer.from(session.csrf)))throw error(403,'画面を更新してから操作してください。','CSRF_REJECTED');
-   if(pathname==='/api/end'&&req.method==='POST'){sessions.delete(sid);for(const[k,r]of results)if(r.owner===session.owner)results.delete(k);res.setHeader('Set-Cookie',`${cookieName}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);return json(200,{ended:true});}
+   if(pathname==='/api/end'&&req.method==='POST'){sessions.delete(sid);for(const[k,r]of results)if(r.owner===session.owner)results.delete(k);res.setHeader('Set-Cookie',`${cookieName}=; ${cookieAttributes}; Max-Age=0`);return json(200,{ended:true});}
    if(pathname!=='/api/jobs'||req.method!=='POST')throw error(405,'使用できない操作です。');
    if(!req.headers['content-type']?.startsWith('application/json'))throw error(415,'JSONで送信してください。');
    let count=0;const chunks=[];for await(const chunk of req){count+=chunk.length;if(count>9_000_000)throw error(413,'画像または入力が大きすぎます。');chunks.push(chunk);}
@@ -97,19 +116,39 @@ export function createApp({mode='unconfigured',budgetUsd=0,directory=path.join(r
    }catch(e){if(ledger.get(body.id,session.owner)?.state==='sending')ledger.finish(body.id,'unknown',null);
     const safeCode=v=>typeof v==='string'&&/^[A-Za-z0-9_.-]{1,50}$/.test(v)?v:null;
     await fs.mkdir(path.join(directory,'diagnostics'),{recursive:true,mode:0o700});
-    await fs.writeFile(path.join(directory,'diagnostics',`${body.id}.json`),JSON.stringify({name:safeCode(e.name),code:safeCode(e.code),cause:safeCode(e.cause?.code),http_status:Number.isInteger(e.status)?e.status:null}),{mode:0o600});
+    await fs.writeFile(path.join(directory,'diagnostics',`${body.id}.json`),JSON.stringify({name:safeCode(e.name),code:safeCode(e.code),cause:safeCode(e.cause?.code),http_status:Number.isInteger(e.status)?e.status:null,diagnostic:structuralDiagnostic(e.diagnostic),usage:numericUsage(e.usage)}),{mode:0o600});
     throw error(e.status||502,e.status?e.message:'通信または結果を確認できません。自動では再送しません。',e.code||'RESULT_UNCERTAIN');}
    finally{running--;}
   }catch(e){json(e.status||500,{error:e.status?e.message:'処理を完了できませんでした。',code:e.code||'INTERNAL_ERROR',notDispatched:!dispatched});}
  };
  return {handler,ledger,close(){ledger.close();},expire,get retainedResultCount(){return results.size;}};
 }
-export async function start({port=Number(process.env.PORT||4176),mode=process.env.APP_MODE||'unconfigured',origin=process.env.APP_ORIGIN||`http://127.0.0.1:${port}`,allowedOrigins=[origin],...options}={}){
- let continuation=null;try{const file=path.join(root,'.runtime/one-test.json');const stat=await fs.stat(file);if(!(stat.mode&0o077))continuation=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
- let acknowledgement=null;try{const file=path.join(root,'.runtime/acknowledged-unknown.json');const stat=await fs.stat(file);if(!(stat.mode&0o077))acknowledgement=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
- const app=createApp({mode,origin,allowedOrigins,budgetUsd:Number(process.env.TRIAL_BUDGET_USD||0),textKey:process.env.OPENAI_TEXT_KEY||'',imageKey:process.env.OPENAI_IMAGE_KEY||'',project:process.env.OPENAI_PROJECT||'',searchEnabled:process.env.ENABLE_SEARCH==='true',continuation,acknowledgement,...options});
- const server=http.createServer(app.handler);server.requestTimeout=200000;server.headersTimeout=10000;
- await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
+export async function loadTransportConfiguration({origin,tlsCertFile='',tlsKeyFile=''}={}){
+ let url;try{url=new URL(origin);}catch{throw Error('A valid APP_ORIGIN is required.');}
+ if(!['http:','https:'].includes(url.protocol)||url.origin!==origin)throw Error('APP_ORIGIN must be an HTTP(S) origin without credentials, path or query.');
+ if(!tlsCertFile&&!tlsKeyFile){if(url.protocol==='https:')throw Error('HTTPS APP_ORIGIN requires both TLS_CERT_FILE and TLS_KEY_FILE.');return {protocol:'http:',tlsOptions:null};}
+ if(!tlsCertFile||!tlsKeyFile||url.protocol!=='https:')throw Error('TLS requires both certificate files and a matching HTTPS APP_ORIGIN; HTTP fallback is disabled.');
+ let handle;
+ try{
+  handle=await fs.open(tlsKeyFile,constants.O_RDONLY|constants.O_NOFOLLOW);
+  const stat=await handle.stat();
+  if(!stat.isFile()||(stat.mode&0o777)!==0o600||(typeof process.getuid==='function'&&stat.uid!==process.getuid()))throw Error();
+  const key=await handle.readFile(),cert=await fs.readFile(tlsCertFile),leaf=new X509Certificate(cert),hostname=url.hostname.replace(/^\[|\]$/g,'');
+  if(leaf.ca||Date.parse(leaf.validFrom)>Date.now()||Date.parse(leaf.validTo)<=Date.now()||!(isIP(hostname)?leaf.checkIP(hostname):leaf.checkHost(hostname,{subject:'never'}))||!leaf.checkPrivateKey(createPrivateKey(key)))throw Error();
+  const tlsOptions={key,cert,minVersion:'TLSv1.2'};createSecureContext(tlsOptions);
+  return {protocol:'https:',tlsOptions};
+ }catch{throw Error('TLS certificate/key validation failed. The key must be an owned regular 0600 file and match the valid hostname certificate. HTTP fallback is disabled.');}
+ finally{await handle?.close();}
+}
+export async function start({port=Number(process.env.PORT||4176),mode=process.env.APP_MODE||'unconfigured',origin=process.env.APP_ORIGIN||`http://127.0.0.1:${port}`,allowedOrigins=[origin],directory=path.join(root,'.runtime'),tlsCertFile=process.env.TLS_CERT_FILE||'',tlsKeyFile=process.env.TLS_KEY_FILE||'',...options}={}){
+ const transport=await loadTransportConfiguration({origin,tlsCertFile,tlsKeyFile});
+ let continuation=null;try{const file=path.join(directory,'one-test.json');const stat=await fs.stat(file);if(!(stat.mode&0o077))continuation=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
+ let acknowledgement=null;try{const file=path.join(directory,'acknowledged-unknown.json');const stat=await fs.stat(file);if(!(stat.mode&0o077))acknowledgement=JSON.parse(await fs.readFile(file,'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
+ const app=createApp({mode,origin,allowedOrigins,directory,budgetUsd:Number(process.env.TRIAL_BUDGET_USD||0),textKey:process.env.OPENAI_TEXT_KEY||'',imageKey:process.env.OPENAI_IMAGE_KEY||'',project:process.env.OPENAI_PROJECT||'',searchEnabled:process.env.ENABLE_SEARCH==='true',continuation,acknowledgement,...options});
+ let server;
+ try{server=transport.tlsOptions?https.createServer(transport.tlsOptions,app.handler):http.createServer(app.handler);server.requestTimeout=200000;server.headersTimeout=10000;
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
+ }catch(e){app.close();server?.close();throw e;}
  console.log(`やまだやAI: ${origin} (${mode})`);return {server,app};
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===path.resolve(process.argv[1]))await start();

@@ -1,5 +1,11 @@
 # 全機能再開と1週間・2端末試用の準備
 
+2026-10-19 Windows初回登録の案内時点: 管理者メール1件の一時登録許可と、Windows専用Include profile（メール完全一致AND Windows）を保存・確認した。Mac用は元のtoken条件を維持。USB/秘密ファイル配布は使わず、ユーザーがWindowsでOTP初回登録する手順を案内し、結果待ち。接続/拒否/失効の実機合格はまだない。
+
+2026-10-19の最新接続準備: 承認済みserial2件、専用Include profile、単一試用ホスト/TCP8443/serial成功のAllowと下位Tunnel Blockを保存。モックTunnelはHealthy、private hostname routeを1件追加。新試用名のローカルTLS8件合格・実API0。Windows導入はユーザー申告で完了、USB不可のためWindows初回のみ管理者メールOTP登録への変更を承認済み。両端末登録、証明書信頼・名前解決、Windows/Gateway実機試験は未完了。既存アプリ/台帳/キー/予算/保留額は変更なし。詳細は[最新の接続記録](restricted-trial-plan.md#2026-10-19追記-モックtunnelと2端末の初回登録準備)を参照。下記は各時点の履歴。
+
+2026-10-19最新の接続準備: ユーザー自身がFreeを有効化し、管理画面のPlan Zero Trust Freeを確認。登録端末0・enrollment policyなし・Tunnelなしを確認した後、Cloudflare Tunnel宛の全port/protocolをBlockする有効ルールを1件保存した。TCP/UDP proxyは既にOn、TLS decryptionはOffで変更していない。端末リストは秘密値なしのフォーム準備まで。端末番号のCloudflare送信直前の確認中で、端末登録・Allow・route・アプリの外部接続はまだない。今回の実API実行0、既存アプリ/台帳/キーは変更なし。[詳細と次の条件](restricted-trial-plan.md)を参照。
+
 最新の進捗：MacへのWARPインストールはユーザーが完了。CLI 2026.8.2110.0と常駐サービスの応答を確認し、状態はRegistration Missing（端末未登録）。Cloudflareはログイン済みでFreeプランの確定前まで進んだが、カード/規約/無料枠超過時の請求の同意欄があり、支払い情報や同意を操作せず本人の条件確認へ引き継いだ。subscription・端末登録・Tunnel・経路・ネット接続は未設定。詳細は[接続計画](restricted-trial-plan.md)の最新追記を参照。今回の追加API実行0。以下の未インストール/未ログインは当初準備時点の履歴。
 
 更新日: 2026-10-19（日本時間）。最新のユーザー指示により、基本4機能とチャット内Web検索を使える状態にし、このMacと会社共用PC1台（Windows 11 / Chrome）だけで1週間試す準備を進める。Wixで管理するsuperyamadaya.comのDNSを維持する。

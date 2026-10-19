@@ -1,8 +1,10 @@
-# 2端末限定の試用接続案（未実施）
+# 2端末限定の試用接続計画と進捗
+
+最新: Free有効化、端末番号2件、端末別登録資格情報、専用Include profile、単一ホスト/TCP8443/serial一致のAllowと下位の全Tunnel Blockを保存済み。モックTunnelはHealthyとなり、private hostname route 1件を追加した。端末はまだ未登録で、Windowsのインストールはユーザー申告。Windowsのみ初回管理者メール認証への変更を承認済み。HTTPS信頼・名前解決と実機の接続/拒否/失効は未完了。以下は履歴を含み、末尾の追記を優先する。
 
 確認日: 2026-10-19。対象はこのMacと会社共用PC 1台（Windows 11 / Chrome）。従業員ごとのログインを要求しない。会社ドメイン `superyamadaya.com` はWix DNSのまま維持する。
 
-本資料は公式仕様の調査と設計案。アカウント作成、契約、端末登録、DNS変更、Tunnel公開、実API呼び出し、秘密情報の読取は実施していない。接続・失効の実機合格報告ではない。
+本資料は公式仕様、段階的な設定実施、未実施の試験を区別して記録する。接続・失効の実機合格報告ではない。
 
 ## 推奨判断
 
@@ -102,3 +104,43 @@ Freeで必要なprivate Tunnel・Gateway・端末チェックを実際に設定�
 Serial numbersはmacOS・Windows双方に対応する。**Device UUIDは現行対応表で両OSとも非対応**のため今回の2端末限定には使わない。serial値だけを暗号学的な本人証明とは扱わず、端末登録の鍵、登録許可の閉鎖、Gateway制限、OS管理者境界と組み合わせる。[対応OS表](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/)、[Serial numbers](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/corp-device/)
 
 Service Authには`Allow`とは別のactionが必要で、enrollment policyではposture checkを実行できない。削除・失効だけで登録許可を残すと、自動再登録が起こり得る。[端末登録](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/device-enrollment/)、[管理設定パラメーター](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/mdm-deployment/parameters/)、[登録の失効](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/device-registration/)
+
+
+## 2026-10-19追記: モックTunnelと2端末の初回登録準備
+
+実画面でZero Trust Free、当初の登録端末0件を確認した。ユーザーが会社Windowsの端末番号を直接入力し、承認済みSerial numbersリストは2件。実値・組織/アカウントID・登録秘密値は公開資料に含めない。WindowsのCloudflare One Client導入はユーザー申告で完了、版・組織登録・接続は未確認。
+
+### 保存・起動したもの
+
+- 端末別Service Tokenを承認後に発行して非公開0600で保存。初回Mac用の秘密値がツール出力へ露出したため、未使用のまま無効化し167時間の交換用へ置換した。Windows用は168時間。無効化した旧tokenを登録許可・profileに含めない。
+- 一時的なenrollmentは特定2tokenのみのService Auth。専用profileは当該2tokenに一致し、Traffic and DNS / MASQUE / Include。手動Includeは試用名と組織のteam domainだけの2件で、既定profileとLocal Domain Fallbackは変更していない。adapter IPの業務DNS登録は専用profileでOff。
+- Gateway Networkは、単一の試用SNI、TCP、8443番、Cloudflare Tunnel宛、承認済みserialリストの成功をすべて満たすAllowを保存し、全Tunnel宛Blockより上へ移動した。posture欠損、誤SNI、SNIなし、別port/protocolを広いAllowへ落とす構成にしていない。実際の拒否は未測定。
+- 試用ホスト完全一致のDo Not Inspectを保存。protocol detectionをOn、全port判定を選択し、TLS decryptionはOffを維持した。HTTP一覧のinactive表示とDNIの保存だけでは暗号化・Gateway認可を実証したことにはしない。
+- 承認されたモック専用named Tunnelを作成し、追加許可に基づくクリップボード一時コピーで接続キーを0600ファイルへ保存、内容を消去した。非特権cloudflaredをtoken-fileで起動し、管理画面でHealthy/1 replicaを確認。private hostname routeは `ai-trial.superyamadaya.com` 1件のみ。公開アプリ、CIDR/LAN route、Wix DNS変更はない。
+
+### HTTPSのローカル検査と残件
+
+独立したdemoモード・別台帳を127.0.0.1:8443に起動。新しい試用名でTLS/Host/Origin/Secure cookie/権限拒否を含むローカル8項目に合格し、ジョブ・実API実行は0。明示した試験CAによる検査であり、OSの信頼設定やWindows/WARPを通した成功の代わりにはしない。既存4174番のアプリ、キー、SQLite台帳は変更していない。
+
+既定の`.internal`フォールバックを削除しないため、試用名を会社管理ドメイン配下へ変更した。公開A/AAAAは読取時にENOTFOUND。非特権443番bindがEACCESのため8443番を選び、上記プロトコル判定を追加した。Macのhosts/OS信頼は未変更で、cloudflaredがorigin名を正しく解決する設定が残る。Macからloopbackへ直通する試験を行う場合、Gatewayの接続制限の証拠と分ける。
+
+公式Split Tunnelsは既定initial-resolved範囲をclient runtimeが自動管理すると説明している。手動で追加した重複IPv4指定は削除し、独自範囲の有無と実際のDNS応答/適用経路は接続後に確認する。IncludeはIP転送の制御で、DNSは原則Gatewayへ送られる。通常Web、社内DNS/LAN、印刷の実機影響は未測定。[Split Tunnels](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/configure/route-traffic/split-tunnels/)
+
+### Windowsの受渡方法の変更
+
+ユーザーがUSBを使えないため、**Windowsだけ初回に既存Cloudflare管理者のメール1件でOTP認証する**方式への変更を明示承認した。従業員の通常ログインとは分ける。メール全体・Everyoneは許可せず、2台を確認後にメール/tokenの新規登録許可を閉じる。Windowsの専用Include profileを下記のとおり保存後、初回登録だけを案内した。接続スイッチはOffのまま登録結果を確認する。準備したWindows用秘密XML/ヘルパーは未配布・未実行。
+
+公式上、既存registrationはenrollment許可の閉鎖だけでは削除されず、Gatewayのclient session durationを強制しない場合は日次ログインを要求しない。実機の再起動・1週間の継続は未確認。ログアウト/再インストール等で新規登録が必要になれば管理者が再設定する。1週間後はアプリの期限停止に加えて、Gateway/registrationの停止も必要である。[Device registration](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/device-registration/)、[Client sessions](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/configure/client-sessions/)
+
+ローカル初回設定用ヘルパーは、既存MDM上書き拒否、準備marker、秘密の非表示と権限制限を備えた案を作成し、独立レビューで親directory ACLとmarker更新順の修正を進めた。Windowsでの実行やACL実測はしていない。既存の別組織登録があれば、MDMファイル不在でも自動変更せず停止する。
+
+残件: Macの初回管理者設定、両端末の正しい組織登録、証明書信頼・origin名前解決、実際のAllow/Blockログ照合、登録閉鎖・失効と再登録拒否、基本4機能のWindows操作・既存業務通信の確認。接続準備の保存を2台限定の実証済みとは扱わない。今回実API0、追加入金/有料追加機能なし。$10上限・unknown3件$0.45・元の試用期限は維持し、既存OpenAIキーの期限更新も未実施。
+
+
+### Windows初回登録の案内時点
+
+管理者メール1件のAllow enrollment policyを保存し、`Enrollment policy saved successfully`を確認した。Mac用のprofileへOR/AND条件を追加する案は、OS条件がMacを除外し得るとして自動承認レビューが保存を拒否した。未保存変更を取り消し、元のMac用Service Token条件を保持したことを確認した。
+
+代わりに独立した`Yamadaya trial - Windows app only`を既存限定profileから複製。条件は管理者メールの完全一致 **AND** Windowsのみで保存した。Includeは試用名とteam domainの2件、adapter DNS登録Off、auto-connect Offを保持。保存後のdetails画面で条件・転送先を確認した。元のMac用profileとDefaultにはWindows条件を適用していない。適用端末数は0で、実際に適用されるprofileは登録後に照合する。
+
+ユーザーへWindowsのZero Trust初回登録手順を案内した。コードをチャットへ送らず、別組織に登録済みなら停止、登録後も接続はOffのまま結果を知らせてもらう段階。接続・信頼・実機試験の合格ではない。

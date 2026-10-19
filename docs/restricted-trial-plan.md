@@ -144,3 +144,8 @@ Service Authには`Allow`とは別のactionが必要で、enrollment policyで�
 代わりに独立した`Yamadaya trial - Windows app only`を既存限定profileから複製。条件は管理者メールの完全一致 **AND** Windowsのみで保存した。Includeは試用名とteam domainの2件、adapter DNS登録Off、auto-connect Offを保持。保存後のdetails画面で条件・転送先を確認した。元のMac用profileとDefaultにはWindows条件を適用していない。適用端末数は0で、実際に適用されるprofileは登録後に照合する。
 
 ユーザーへWindowsのZero Trust初回登録手順を案内した。コードをチャットへ送らず、別組織に登録済みなら停止、登録後も接続はOffのまま結果を知らせてもらう段階。接続・信頼・実機試験の合格ではない。
+
+
+### 会社管理メールへの変更（最新）
+
+ユーザーが会社共用PCで私用Googleアカウントを使いたくないと明示。GoogleへのログインとWARPのOTP登録は別だが、登録情報へ私用メールが残る点を説明し、会社管理メールを使う方式へ変更することを選択した。私用メールのenrollment policyを適用対象から外し、Enrollment policy saved successfullyを確認。特定tokenのService Authだけを保持している。会社アドレス自体は未受領で、メール許可とWindows用profileのアドレス更新は未実施。直前のWindows登録案内はいったん停止し、旧私用メールで登録しない。

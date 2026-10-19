@@ -92,3 +92,8 @@ private Tunnelは初期状態で全登録端末が到達できるため、接続
 Windows用Include profileを独立作成して保存後のdetailsで確認した。条件は承認済み管理者メールの完全一致AND Windowsだけ。転送先は試用名とteam domainの2件、adapter DNS登録とauto-connectはOff。Mac用profileの共通条件変更は自動レビューがMac除外の可能性を指摘して保存を拒否したため取り消し、別profileに分けて対処した。登録・接続の実証ではない。
 
 会社WindowsでOne ClientのZero Trust securityを選び、個別案内されたteam名と管理者メールで初回認証する手順をユーザーへ案内済み。認証コードはチャットへ送らず、別組織に登録済みなら停止。登録後は接続Offのまま管理側で端末とprofileを照合する。実登録の結果待ちであり、上の実機項目は未実施を維持する。[公式の手動登録](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/manual-deployment/)
+
+
+### 会社管理メールへの変更（最新）
+
+会社PCに私用Googleアカウントを使わない方針を受け、会社管理メールによる初回OTPへ変更する。私用メールの一時登録許可は適用対象から削除・保存確認済み。会社アドレスを受け取るまでWindows登録は停止。先の私用メールによる手順を実行せず、更新後の個別案内を待つ。Googleのログイン状態を会社PCへ作ることは求めない。会社アドレスも公開文書には記入しない。

@@ -42,3 +42,8 @@ Macを配信元にする場合は、試用時間中の起動・給電・ネッ�
 公式根拠: [Web検索](https://developers.openai.com/api/docs/guides/tools-web-search)、[Responses](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)、[料金](https://developers.openai.com/api/docs/pricing)。接続方式の根拠は試用案を参照。
 
 MacのWARPインストールは管理者認証が必要で、自動実行はパスワードを求める前に停止した。認証情報の取得・入力はしていない。公式パッケージは検証済みのまま一時フォルダに保存した。
+
+
+### 会社管理メールへの変更（最新）
+
+Windows初回登録は会社管理メールへ変更する選択を受領。私用メールのenrollment適用は解除・保存済み。会社アドレス未受領のため登録案内を停止している。2端末の実登録・HTTPS接続は未完了のまま。

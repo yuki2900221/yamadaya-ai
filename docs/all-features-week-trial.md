@@ -1,5 +1,7 @@
 # 全機能再開と1週間・2端末試用の準備
 
+2026-10-19最新: 会社管理メール1件のAllow・Windows専用profile更新を保存確認し、One-time PINを追加した。Enrollmentは全IdP許可をOff、OTPだけを選択し、既存の特定token Service Authを残した状態を再読込で確認。Windowsでの初回コード入力・端末登録・実機11項目は未実施。実API0、既存アプリ/台帳/キー/$10上限/unknown3件$0.45/試用期限は変更なし。[設定結果と残件](restricted-trial-plan.md#会社管理メールとotpの設定完了最新)。以下は履歴。
+
 2026-10-19 Windows初回登録の案内時点: 管理者メール1件の一時登録許可と、Windows専用Include profile（メール完全一致AND Windows）を保存・確認した。Mac用は元のtoken条件を維持。USB/秘密ファイル配布は使わず、ユーザーがWindowsでOTP初回登録する手順を案内し、結果待ち。接続/拒否/失効の実機合格はまだない。
 
 2026-10-19の最新接続準備: 承認済みserial2件、専用Include profile、単一試用ホスト/TCP8443/serial成功のAllowと下位Tunnel Blockを保存。モックTunnelはHealthy、private hostname routeを1件追加。新試用名のローカルTLS8件合格・実API0。Windows導入はユーザー申告で完了、USB不可のためWindows初回のみ管理者メールOTP登録への変更を承認済み。両端末登録、証明書信頼・名前解決、Windows/Gateway実機試験は未完了。既存アプリ/台帳/キー/予算/保留額は変更なし。詳細は[最新の接続記録](restricted-trial-plan.md#2026-10-19追記-モックtunnelと2端末の初回登録準備)を参照。下記は各時点の履歴。

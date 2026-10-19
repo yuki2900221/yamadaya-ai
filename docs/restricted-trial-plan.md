@@ -1,6 +1,6 @@
 # 2端末限定の試用接続計画と進捗
 
-最新: Free有効化、端末番号2件、端末別登録資格情報、専用Include profile、単一ホスト/TCP8443/serial一致のAllowと下位の全Tunnel Blockを保存済み。モックTunnelはHealthyとなり、private hostname route 1件を追加した。端末はまだ未登録で、Windowsのインストールはユーザー申告。Windowsのみ初回管理者メール認証への変更を承認済み。HTTPS信頼・名前解決と実機の接続/拒否/失効は未完了。以下は履歴を含み、末尾の追記を優先する。
+最新: 指定会社メール1件の登録AllowとWindows専用profileを保存確認。One-time PINを追加し、Enrollmentの認証方法をOTPだけに限定、特定tokenのService Authを維持した状態を再読込で確認した。端末番号2件・単一ホスト/TCP8443のGateway制限、モックTunnelとprivate routeは前段で保存済み。Windows本人のコード入力・端末登録、HTTPS信頼・名前解決と接続/拒否/失効の実機検証は未完了。以下は履歴を含み、末尾の追記を優先する。
 
 確認日: 2026-10-19。対象はこのMacと会社共用PC 1台（Windows 11 / Chrome）。従業員ごとのログインを要求しない。会社ドメイン `superyamadaya.com` はWix DNSのまま維持する。
 
@@ -146,6 +146,18 @@ Service Authには`Allow`とは別のactionが必要で、enrollment policyで�
 ユーザーへWindowsのZero Trust初回登録手順を案内した。コードをチャットへ送らず、別組織に登録済みなら停止、登録後も接続はOffのまま結果を知らせてもらう段階。接続・信頼・実機試験の合格ではない。
 
 
-### 会社管理メールへの変更（最新）
+### 会社管理メールへの変更（受領前の履歴）
 
 ユーザーが会社共用PCで私用Googleアカウントを使いたくないと明示。GoogleへのログインとWARPのOTP登録は別だが、登録情報へ私用メールが残る点を説明し、会社管理メールを使う方式へ変更することを選択した。私用メールのenrollment policyを適用対象から外し、Enrollment policy saved successfullyを確認。特定tokenのService Authだけを保持している。会社アドレス自体は未受領で、メール許可とWindows用profileのアドレス更新は未実施。直前のWindows登録案内はいったん停止し、旧私用メールで登録しない。
+
+### 会社管理メールとOTPの設定完了（最新）
+
+指定会社メール1件だけのInclude Emails / Allowを保存し、Enrollmentへ適用した。Windows専用profileも同じメールの完全一致AND Windowsへ更新し、保存後のdetailsで確認。Includeの2宛先、auto-connect Off、adapter DNS登録Offを保持した。Mac用profileとDefaultは変更していない。実メールは本書・GitHubに記載しない。
+
+調査時のIdPはCloudflareだけだった。これはCloudflareアカウントによる認証で、OTPの別名ではない。従来の案内は「メール許可があればOTPを利用できる」という前提が不足していた。現在の新規組織ではCloudflare IdPが既定となり、OTPは自動追加されない。[公式Cloudflare IdP](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/cloudflare/)、[公式One-time PIN](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/)
+
+Access Applicationsが初回作成画面で既存アプリを表示しないことを確認してから、One-time PINを追加し、ADDED表示を確認。EnrollmentはAccept all available identity providersをOff、選択をOne-time PINだけ、instant authentication Onで保存した。ページ再読込で、この選択と会社メールAllow・特定2 tokenのService Authの保持を確認した。OTPを独立したInclude条件として追加していない。会社メールにCloudflareアカウントの作成や管理権限は付与していない。
+
+Windowsでは403の古いタブを閉じ、WARPアプリからチーム名を入力する初回登録をやり直す。指定メールでコードを受け取り、本人がWindows画面へ入力する。裸の`/warp` URLや古い認証URLの再利用を案内しない。登録後は接続Offのまま端末・適用profile・postureを管理側で照合する。403画像だけから個別リクエストの拒否原因を断定せず、登録成功は実際の結果待ちとする。
+
+今回の実測は管理画面の保存・再読込確認のみ。Windows登録・接続/拒否/失効、証明書信頼、名前解決、11項目の実機試験は未実施。実API0、追加契約・入金・Wix DNS変更なし。既存アプリ・台帳・キー・$10上限・unknown3件$0.45・元の試用期限を維持した。

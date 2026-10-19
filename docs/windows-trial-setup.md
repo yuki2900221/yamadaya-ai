@@ -4,11 +4,13 @@
 
 要求・許可範囲は[試用版要求](requirements.md)、全体構成と最新状態は[2端末限定試用計画](restricted-trial-plan.md)、費用と期間は[最新報告](all-features-week-trial.md)を正本とする。本書は現地作業と実機の合否記録に限る。
 
+会社管理メールはユーザーから1件指定済み。その1件の登録許可とWindows用profileの条件更新、One-time PIN追加とEnrollmentのOTP限定を保存・確認済み。Windows本人のコード入力と登録結果はこれから。現在の案内は末尾の「指定済み会社管理メールへの切替」を優先する。
+
 ## 最新の登録方式と準備状況
 
-- USBを利用できないため、**Windowsの初回登録だけ、既存のCloudflare管理者メール1件へのOTPで本人が認証する方式をユーザーが明示承認**した。主担当が一時的なenrollment policyを保存し、保存成功の表示を確認した。メールアドレス・OTP・組織名の実値は本書へ記載しない。
+- USBを利用できないため、**Windowsの初回登録だけ、ユーザーが指定した会社管理メール1件へのOTPで本人が認証する方式を承認済み**。主担当が当該1件のAllow policy保存とEnrollmentへの適用、OTP追加と認証方法の限定を確認した。メールアドレス・OTP・組織名の実値は本書へ記載しない。
 - Gatewayは、許可リストのシリアル番号2件・試験用単一ホスト・TCP 8443だけのAllowと、その下位のTunnel Blockを保存し、順序を確認済み。モック用TunnelはHealthy、private hostnameのrouteは1件追加済み。これらは管理側の設定確認であり、Windowsからの到達・拒否を実測した結果ではない。
-- **Windows用のInclude profileは準備中で未完了**。適用先・経路を確認するまでWindowsの組織登録と利用開始へ進めない。会社PCの既存の組織登録・管理設定を先に確認する。
+- Windows専用Include profileは、指定会社メールの完全一致AND Windowsの条件更新を管理画面で確認済み。実機への適用は未確認。会社PCの既存の組織登録・管理設定を先に確認してから、初回登録を行う。アプリの接続開始は端末照合後とする。
 - Windows用の登録helperとXMLは**未配布・未実行で、配布案は保留**。Windowsでは秘密値を渡す旧手順を進めない。
 - 通常の従業員ログイン不要は維持する。公式には、Gatewayのclient session期限を指定しなければ既定で無期限となるため、初回登録と毎日のログインは分けて扱える。実際の再認証設定の確認と、Windowsの再起動・再接続試験は未実施。[公式Client sessions](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/configure/client-sessions/)
 - 対象2台の登録・postureを照合したら、メールとTokenによる新規登録許可を閉じる。登録許可の閉鎖後も両端末を再起動して確認する。登録状態は削除まで持続する公式仕様だが、実機の再接続成功を先取りしない。[公式Device registration](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/device-registration/)
@@ -47,7 +49,8 @@ Get-CimInstance Win32_BIOS | Select-Object -ExpandProperty SerialNumber
 ## 組織への初回登録（Windowsは初回管理者OTP）
 
 - [x] 管理者側で、対象2件のシリアル番号・単一ホスト・TCP 8443だけのAllowと、その下位のTunnel Blockを保存して順序を確認した。組織へ登録できることとアプリに接続できることは別に実機検証する。
-- [ ] Windows用Include profileの準備・保存・適用先の確認が完了していることを管理者が確認する。
+- [x] Windows用Include profileの条件を、指定会社メールの完全一致AND Windowsへ更新したことを管理画面で確認した。Windows実機への適用は未確認。
+- [x] Access Applicationsの初回作成画面を確認後One-time PINを追加。Enrollmentは全IdP許可Off・OTPだけ・instant authentication Onとして保存し、再読込で確認。既存の特定token Service Authを保持した。
 - [ ] 既存の会社用組織登録がないことを確認後、管理者が承認済みメール1件のOTPで初回登録する。コードをチャットや従業員へ渡さない。helper/XMLの配布やService Tokenの手入力で進めない。
 - [ ] Cloudflare One Clientが会社の正しいZero Trust組織へ登録されたことを管理者が照合する。一般向けの1.1.1.1接続だけでは完了にしない。
 - [ ] Cloudflare管理画面の対象登録とpostureをWindows実機と照合し、対象がMacとWindowsの2台だけであることを確認する。2台登録後はメール・Tokenの新規登録許可を閉じ、再起動・再接続の正常動作を試す。
@@ -94,6 +97,16 @@ Windows用Include profileを独立作成して保存後のdetailsで確認した
 会社WindowsでOne ClientのZero Trust securityを選び、個別案内されたteam名と管理者メールで初回認証する手順をユーザーへ案内済み。認証コードはチャットへ送らず、別組織に登録済みなら停止。登録後は接続Offのまま管理側で端末とprofileを照合する。実登録の結果待ちであり、上の実機項目は未実施を維持する。[公式の手動登録](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/manual-deployment/)
 
 
-### 会社管理メールへの変更（最新）
+### 会社管理メールへの変更（受領前の履歴）
 
-会社PCに私用Googleアカウントを使わない方針を受け、会社管理メールによる初回OTPへ変更する。私用メールの一時登録許可は適用対象から削除・保存確認済み。会社アドレスを受け取るまでWindows登録は停止。先の私用メールによる手順を実行せず、更新後の個別案内を待つ。Googleのログイン状態を会社PCへ作ることは求めない。会社アドレスも公開文書には記入しない。
+会社PCに私用Googleアカウントを使わない方針を受け、会社管理メールによる初回OTPへ変更した。私用メールの一時登録許可は適用対象から削除・保存確認済み。この時点では会社アドレスが未受領でWindows登録を止めていた。会社PCにGoogleのログイン状態を作ることは求めず、メール実値も公開文書には記入しない。
+
+### 指定済み会社管理メールへの切替（最新・登録結果待ち）
+
+ユーザーが指定した会社管理メール1件のAllow policy保存・Enrollmentへの適用と、Windows専用profileのメール完全一致AND Windows条件への更新を、主担当が管理画面で確認した。
+
+調査時のIdentity providerはCloudflareだけだった。公式仕様でも新しいZero Trust組織はCloudflareが既定で、OTPは自動追加されない。既存Accessアプリを表示しない初回作成画面を確認し、One-time PINを追加、Enrollmentの全IdP許可Off・OTPだけの選択を保存後の再読込で確認した。[公式One-time PIN login](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/)
+
+Windowsで403の古いタブを閉じ、WARPアプリからチーム名を入力して登録をやり直す。指定メールでコードを受信し、本人がWindowsの登録画面へ入力する。GoogleやCloudflare管理画面へのログイン、OTPのチャット共有は不要。完了したら接続Offのまま、管理側で端末・適用profile・postureを照合する。
+
+Windowsの実登録はまだ確認していない。上のWindows実機11項目はすべて未実施のまま維持する。メール、秘密値、シリアル番号、画面内の接続識別情報は公開しない。

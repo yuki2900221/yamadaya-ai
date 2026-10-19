@@ -1,6 +1,6 @@
 # 2端末限定の試用接続計画と進捗
 
-最新: Windows初回登録完了の本人申告後、Cloudflareの端末1台・有効registration1件・指定会社メール・専用Last active profile・Disconnectedを照合。登録時刻付近のserialチェックPassedとprofile側の適用1台・Include2宛先・自動接続Offを確認した。Mac登録、HTTPS信頼・名前解決と接続/拒否/失効の実機検証は未完了。2台が揃うまで新規登録口は維持し、今回設定変更・実API実行0。以下は履歴を含み、末尾の追記を優先する。
+最新: MacとWindows計2端末の登録・各専用Last active profile・serial判定の表示記録を確認し、新規登録口はBlock Everyoneだけへ閉鎖した。MacはCLIの専用profile/Include2宛先/自動接続Offも確認。ダミーHTTPSの証明書変更とローカル8件は合格。MacのHTTPS信頼・名前解決helperは本人実行の結果待ちで、Chrome表示と接続/拒否/失効の実機検証は未完了。追加API/課金0、WindowsはOff。以下は履歴を含み、末尾の追記を優先する。
 
 確認日: 2026-10-19。対象はこのMacと会社共用PC 1台（Windows 11 / Chrome）。従業員ごとのログインを要求しない。会社ドメイン `superyamadaya.com` はWix DNSのまま維持する。
 
@@ -171,3 +171,17 @@ Windowsでは403の古いタブを閉じ、WARPアプリからチーム名を入
 Windows専用profileのdetailsもEnabled / 1 deviceで同じ端末を表示。会社メール完全一致AND Windows、Traffic and DNS / MASQUE、Split Tunnels Include、Auto connect Disabled、interface IP DNS registration Disabled、試用ホストとteam domainの2宛先、Local Domain Fallback 14件を確認した。Last activeの確認は管理画面の取得済profileの証拠であり、端末側CLIの現在設定や実経路まで確認したとは扱わない。[公式Device profile確認](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/configure/device-profiles/#verify-device-profile)
 
 当該組織の一覧にMacはまだない。Mac側の登録とHTTPS信頼・origin名前解決を整えた後、Windows接続を明示案内し、モック到達・新しいposture/通信ログ・拒否/失効・業務影響を試験する。2台登録前なのでメール/tokenの登録口はまだ閉じていない。Windowsの実機11項目も未合格のまま。今回は読み取りだけでCloudflare設定変更0、実API0。費用上限・保留額・期限と既存アプリは維持した。
+
+### Mac登録とHTTPS接続準備（最新）
+
+ユーザーがMac登録・HTTPS準備を許可し、Windows Off・追加API/課金なしを指定。既存Mac登録とMDMがないことを確認し、発行済みMac専用資格情報とXMLの完全一致・期限・0600、Service Authの指定2 token、専用Include profileを確認した。本人がレビュー済み登録helperを実行して配置完了を申告。MDMはroot所有0600、CLIはmanaged/team登録成功・Disconnected/Manual。必要な`mdm refresh`を実行し、現在の取得設定がMac専用profile、warp+doh/MASQUE/Include、2宛先、自動接続false、interface DNS登録falseに一致した。秘密値は表示していない。[公式MDM](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/mdm-deployment/#place-an-unmanaged-mdmxml-file)
+
+Cloudflare一覧はMac/Windows各1 registrationの計2端末で、それぞれの専用Last active profileを表示。Macのserialチェックは11:29 JSTの記録でPassed、関連policy 1件。前段のWindowsのPassedと合わせて確認し、初回メールAllow/Service AuthをEnrollment適用対象から外し、Block / Include Everyoneの1 policyだけを保存・再読込確認した。旧policy/資格情報自体の削除ではない。閉鎖後もMacの同じregistrationとDisconnectedをCLI確認。新しい未許可端末の登録拒否・両OS再起動/再接続はまだ実測していない。
+
+HTTPSは、Chromeがhostname付きmacOS trust policyを無視する実装を一次資料で確認したため、CA全体を信頼する方式へ広げず、**単一SAN・CA:false・serverAuth・7日間の自己署名サーバー証明書1枚だけの直接信頼**へ候補を変更した。旧CA/証明書/鍵は保存し、ダミー8443だけを新証明書で再起動。既存4174アプリ・実AI設定・台帳は変更していない。[Chromium Mac trust](https://chromium.googlesource.com/chromium/src/+/main/net/cert/internal/trust_store_mac.cc#66)、[BoringSSLのanchor制約](https://boringssl.googlesource.com/boringssl/+/refs/heads/main/pki/verify_certificate_chain.cc#1906)
+
+実施した検査は、切替前のローカルTLS 8/8、切替後のローカル8/8（証明書指紋/名前/期限、TLS正しいleaf、実AI未接続、Secure Cookie、Host偽装拒否、別SNI拒否、HTML表示、管理API拒否）。macOS標準検証器で新公開証明書の明示信頼による正しいhost成功と別host拒否も確認した。別の完全使い捨て鍵だけを用いる陰性fixtureでは、CA:falseのサーバー証明書で署名した別host証明書がInvalid BasicConstraints.CAで拒否された。既存秘密鍵を陰性fixtureへ使う案は自動承認レビューに拒否されたため実行せず、使い捨てfixtureへ置き換えた。OSストアはこれらの検査で変更していない。
+
+本人実行用HTTPS helperは、公開証明書の固定指紋/CA:false/単一SAN/期限検査、単一hosts追記・root専用0600バックアップ・競合/symlink拒否、本人loginキーチェーンでSSLだけの信頼を準備。sudo Pythonは独立レビュー指摘により`-I`で起動し、cwdからのモジュール混入を防いだ。構文・validator・独立レビューは完了、実行結果は本人確認待ち。Terminal操作はツール安全制限で行えないため、Finderで隠しファイル表示を有効にし、対象helperを選択して案内した。パスワードは本人が直接入力する。
+
+現在未完了: Macのhosts/OS信頼反映、Chromeの警告なし表示、WARP経由Gateway実通信、Windowsへの公開leaf配布・信頼・実機11項目。Macでloopbackへ直接表示できてもGateway合格とはしない。WindowsはOffのままで変更していない。実API/追加入金/追加契約0、既存費用上限・未確定保留・期限・Wix DNSは維持する。

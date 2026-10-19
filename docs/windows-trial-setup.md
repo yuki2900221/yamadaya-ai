@@ -4,7 +4,9 @@
 
 要求・許可範囲は[試用版要求](requirements.md)、全体構成と最新状態は[2端末限定試用計画](restricted-trial-plan.md)、費用と期間は[最新報告](all-features-week-trial.md)を正本とする。本書は現地作業と実機の合否記録に限る。
 
-指定会社メール1件の登録許可・Windows用profile・OTP限定を設定し、ユーザーが初回登録を完了した。主担当も登録・最後に取得されたprofile・postureの表示を照合済み。接続Offの状態を維持しており、現在の判定は末尾の「Windows登録と最後に取得された設定の照合」を優先する。
+Windowsに続いてMacも登録済み。主担当が管理画面で2端末・各registration 1件と、それぞれの専用Last active profileを照合した。Windowsの接続Offを維持し、現在の判定は末尾の「Mac登録とHTTPS用証明書の準備」を優先する。OSの信頼設定と実ブラウザのHTTPS試験は未完了。
+
+2端末の登録とserial判定の表示記録を照合後、新規登録口をBlock Everyoneだけへ保存・再読込確認済み。既存Mac登録の保持とOffもCLI確認した。Windowsの再接続や新規端末拒否を実測した証拠にはしない。
 
 ## 最新の登録方式と準備状況
 
@@ -13,7 +15,7 @@
 - Windows専用Include profileは、指定会社メールの完全一致AND Windowsを保持。管理画面で対象1台とLast active profileの一致を照合した。これは最後に取得された設定の証拠であり、接続後の適用・経路の合格とは区別する。
 - Windows用の登録helperとXMLは**未配布・未実行で、配布案は保留**。Windowsでは秘密値を渡す旧手順を進めない。
 - 通常の従業員ログイン不要は維持する。公式には、Gatewayのclient session期限を指定しなければ既定で無期限となるため、初回登録と毎日のログインは分けて扱える。実際の再認証設定の確認と、Windowsの再起動・再接続試験は未実施。[公式Client sessions](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/configure/client-sessions/)
-- 一覧にある端末はWindows 1台だけで、Macの登録は表示されていない。対象2台の登録・postureを照合する前のため、メールとTokenによる新規登録許可はまだ閉じていない。2台確認後に閉じ、両端末の再起動・再接続を試す。登録状態は削除まで持続する公式仕様だが、実機の再接続成功を先取りしない。[公式Device registration](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/device-registration/)
+- MacとWindowsの2端末が一覧にあり、各registration 1件と専用Last active profileの一致を確認した。両端末のposture照合と新規登録許可の閉鎖は別途完了を確認し、閉鎖後に両端末の再起動・再接続を試す。この更新でメール・Tokenの登録許可が閉鎖済みとは扱わない。登録状態は削除まで持続する公式仕様だが、実機の再接続成功を先取りしない。[公式Device registration](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/device-registration/)
 
 ## 前段の準備記録（登録方式は上記を優先）
 
@@ -111,7 +113,7 @@ Windowsで403の古いタブを閉じ、WARPアプリからチーム名を入力
 
 この時点ではWindowsの登録結果待ちだった。後続の照合結果を次節へ記録する。メール、秘密値、シリアル番号、画面内の接続識別情報は公開しない。
 
-### Windows登録と最後に取得された設定の照合（最新）
+### Windows登録と最後に取得された設定の照合（11:14時点の記録）
 
 2026-10-19 11:14 JST頃、ユーザーの「登録できた・接続Off」との申告後、主担当がCloudflareの管理画面を読み取り確認した。端末一覧はWindows 1台、active registration 1件で、指定会社メールと一致。Platformはwindows、OSは10.0.22631 / UBR 6199、clientは2026.8.2110、Client Disconnectedだった。Macの登録は一覧にない。
 
@@ -120,3 +122,13 @@ Last active profileはWindows専用profileと一致し、profileのdetailsでも
 許可端末リスト（既存のシリアル番号2件）のpostureはPassed、Last runは11:12 JST、Connected policiesは1と表示された。これはその時点の登録・設定取得・posture表示の証拠であり、接続Off中の継続更新やGateway経路の合格を示さない。接続開始後にprofileの取得・postureの更新・対応するGatewayログを再確認し、HTTPS表示、拒否・失効、再起動等の実機11項目を試す必要がある。
 
 対象2台が揃っていないため、新規登録許可は未閉鎖。今回の作業ではWeb設定変更・実API呼び出しは0件。登録の照合を理由に、実機11項目の未実施判定は変更しない。実際のメール、端末名・ID、シリアル番号等は記載しない。
+
+### Mac登録とHTTPS用証明書の準備（最新）
+
+ユーザーの明示許可後、Mac本人が登録helperを実行。主担当がCLIで会社組織への登録成功とDisconnectedManual、macOS 27.0.1 / client 2026.8.2110を確認した。取得したprofileは予定のMac専用profileと一致し、warp+doh / MASQUE / Include、always_on false、interface DNS false、Include宛先2件を照合した。管理画面でもMac・Windowsの2端末、各registration 1件、各専用Last active profileの一致を確認した。Windowsの接続Offと、実機11項目の未実施判定は維持する。
+
+HTTPSは、今回確認したChromeポリシーがString形式を扱えなかったため、CA全体を信頼させる旧案を進めず、**7日有効・自己署名・CA:false・serverAuth・単一試用ホストだけのSANを持つleaf証明書1枚を直接信頼する案**へ切り替えて準備している。配布候補は公開証明書だけで、秘密鍵は渡さない。Windows向けの証明書配布・信頼登録は未実施で、Windows Chromeが適切に検証できることも未確認。配布・登録の具体手順は、その確認前に先取りしない。
+
+旧CA方式の証明書は履歴として保存。Macのloopback上のモック8443番を新leafへ切り替えて再起動し、ローカルTLS試験8/8件に合格した。追加実API呼び出しは0件。この合格はOSの信頼設定やWARP実経路を使うHTTPS表示の証拠ではない。
+
+レビュー済みのMac用HTTPS初回helperは本人へ手元実行を依頼中。OSの信頼設定の完了・実ブラウザのHTTPS試験は未確認で、Windowsへの公開証明書配布・信頼登録・Chrome試験もすべて残件とする。実際のメール、登録ID、シリアル番号、秘密鍵、端末固有のホスト名等は本書へ記載しない。

@@ -73,3 +73,32 @@ WARP方式は選択済み。残る事項は、会社管理アカウントでの�
 公式のmacOS 2026.8.2110.0パッケージを一時フォルダへ取得済み。Homebrew公式caskのSHA-256と一致し、pkgutilでCloudflare Inc.のDeveloper ID Installer署名・Apple公証の信頼を確認した。OSインストール、WARP接続、VPN/DNS変更はまだしていない。Windows側は会社PCで初回インストールが必要。配布先は[公式ダウンロード](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/download/)。
 
 Tunnelコネクターcloudflared 2026.10.1はHomebrewの公式配布から導入し、版を確認済み。Tunnelの作成・ログイン・接続・常駐サービス起動はしていない。MacのWARP自体は管理者認証が必要で未インストール。
+
+## 2026-10-19追記: インストール後とFree申込画面の確認
+
+この節は、上のインストーラー準備記録より後の現在状態を記録する。主担当による実画面・端末状態の確認結果を反映した。
+
+- MacのWARPはインストール済み。確認できた版は2026.8.2110。daemonの状態は`RegistrationMissing`であり、会社のZero Trustへの端末登録はまだない。
+- Cloudflare管理画面へのログインは済んでいる。Freeプランを選択して申込画面へ移動したが、**subscriptionは未有効化**。
+- 実画面ではFreeが`$0 / seat / month`、会社のPoC向け、50ユーザー上限と表示された。支払い画面のOrder summaryもDue Today `$0 / month`だった。
+- 同じ画面には、含まれる枠を超えた利用の月次請求に関する表示がある。カード欄は空欄、Termsへの同意と追加利用分の月次請求を認めるチェック欄は未選択。カード入力、同意、Activateには触れていない。`$0`表示だけを根拠に追加機能・超過利用まで無料と解釈しない。
+- 今回の確認では実API呼び出し、APIキー変更、料金発生、Tunnel接続、端末認可変更を行っていない。会社のアカウントIDや支払い情報はこの資料に保存しない。
+
+現行公式手順（2026-10-12更新）にも、Zero Trust Freeの申込で支払い情報が必要であり、Freeを選択した場合は課金しない旨が記載されている。これは画面の注文内容・追加利用条件を確認する代わりにはならない。[公式Get started](https://developers.cloudflare.com/cloudflare-one/setup/)
+
+Freeで必要なprivate Tunnel・Gateway・端末チェックを実際に設定できることは、まだ確認できていない。WARPのインストール済み状態、Freeの選択、`$0`の表示だけでは認証方式の成立としない。申込確定前には、秘密値を含まない設定案、ローカルHTTPS/Origin対応、モック試験を準備できる。
+
+### 申込確定後の設定順序（未実施）
+
+1. **まだrouteを追加しない。** Zero Trustの有効プラン、既存端末、enrollment policyを確認する。会社メール全体・Everyone・Any service tokenなどの広い登録許可を新たに設けない。
+2. GatewayのTCP proxyを有効にし、試験用宛先・専用virtual networkを対象とするcatch-all **Blockを先に**設定する。SNIが一致する通信だけをBlockする方式にはしない。SNIなし、直接IP、別portも拒否対象にする。会社のインターネット全体をBlockする設定にはしない。
+3. 許可するMacとWindowsのserial番号2件だけのリストを作り、`Passed Device Posture Checks`で照合する。試験用hostname/SNI、HTTPSの宛先port、試験用宛先/virtual network、当該postureをすべて満たす**AllowをBlockより上位**へ配置する。欠損・失敗postureは許可しない。
+4. 端末別service tokenを作り、その特定tokenだけを`Service Auth`のenrollment policyへ一時的に追加する。管理者がWARPの`organization`、`auth_client_id`、`auth_client_secret`を初回設定する。秘密値はGit、チャット、画面共有資料へ載せない。Postureは登録後に評価されるため、enrollment policy自体に端末チェックがあるとは扱わない。
+5. 登録が対象2台だけで、各postureが期待どおりになることを確認し、新規登録の許可を閉じる。正常な再起動・再接続と新たな端末の登録拒否を確認する。失効時はtokenの登録許可と既存registrationの両方を止め、自動再登録を防ぐ。
+6. HTTPSとHost/Origin対応を済ませた**モックoriginへのprivate routeを最後に**接続する。Gatewayログで実際の照合先（初期解決IP、実宛先、virtual network）とルール順序を確認し、別端末・直接IP・SNIなし・別port・失効後の拒否を試す。公開hostnameや広いLANのCIDRは追加しない。
+
+この順序は、private Tunnelの初期状態では全登録端末が接続でき、Gateway network policyは上から順に最初の一致で評価される仕様に基づく。[private Tunnelの既定動作](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/private-net/cloudflared/connect-cidr/)、[network policies](https://developers.cloudflare.com/cloudflare-one/traffic-controls/network-policies/)、[policy例と評価順序](https://developers.cloudflare.com/cloudflare-one/traffic-controls/network-policies/common-policies/)
+
+Serial numbersはmacOS・Windows双方に対応する。**Device UUIDは現行対応表で両OSとも非対応**のため今回の2端末限定には使わない。serial値だけを暗号学的な本人証明とは扱わず、端末登録の鍵、登録許可の閉鎖、Gateway制限、OS管理者境界と組み合わせる。[対応OS表](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/)、[Serial numbers](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/corp-device/)
+
+Service Authには`Allow`とは別のactionが必要で、enrollment policyではposture checkを実行できない。削除・失効だけで登録許可を残すと、自動再登録が起こり得る。[端末登録](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/device-enrollment/)、[管理設定パラメーター](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/mdm-deployment/parameters/)、[登録の失効](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/device-registration/)

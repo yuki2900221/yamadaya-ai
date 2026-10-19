@@ -1,5 +1,7 @@
 # 全機能再開と1週間・2端末試用の準備
 
+2026-10-19最新: Mac本人のHTTPS準備を読み取り検証し、Chromeでホームと基本4画面を警告なしに表示。「この接続は保護されています」「証明書は有効です」をChrome本体で確認した。生成・送信0、追加API/課金0。Mac WARPはDisconnected/Manual、WindowsもOffを維持。今回はMac内のloopback HTTPSであり、WARP/Gateway経路やWindowsへの証明書配布/信頼/実機11項目の合格へ流用しない。[確認結果](restricted-trial-plan.md#macのchrome接続確認最新)。以下は履歴。
+
 2026-10-19最新: Macの既存専用資格情報による登録に成功。CLI取得設定とCloudflareの計2端末・各専用profile・serialチェックの表示記録を照合し、新規登録口をBlock Everyoneだけにした。ダミーHTTPSをCA:false自己署名サーバー証明書1枚へ切替、ローカル8件合格。Macのhosts/本人SSL信頼設定はhelper本人操作の結果待ちで、Chrome接続・Windows実機試験は未実施。追加API/課金0、既存アプリ/台帳/キー/上限/保留額/試用期限は不変。[現在の準備と残件](restricted-trial-plan.md#mac登録とhttps接続準備最新)。以下は履歴。
 
 2026-10-19 11:14 JST確認: Windowsの登録完了・接続OFFの本人申告を、Cloudflareの登録1台/registration1件・会社メール・Windows専用Last active profile・Disconnected表示で照合。serialチェックは同日11:12の記録でPassed。専用profileは適用1台、Include2宛先、自動接続Off等を確認した。Macは当該組織へまだ未登録で、HTTPSと経路/拒否/失効の実機検証は残る。今回のクラウド設定変更・実API実行0。[確認結果と限界](restricted-trial-plan.md#windows登録後の照合最新)。下記は履歴。

@@ -4,7 +4,7 @@
 
 要求・許可範囲は[試用版要求](requirements.md)、全体構成と最新状態は[2端末限定試用計画](restricted-trial-plan.md)、費用と期間は[最新報告](all-features-week-trial.md)を正本とする。本書は現地作業と実機の合否記録に限る。
 
-Windowsに続いてMacも登録済み。主担当が管理画面で2端末・各registration 1件と、それぞれの専用Last active profileを照合した。Windowsの接続Offを維持し、現在の判定は末尾の「Mac登録とHTTPS用証明書の準備」を優先する。OSの信頼設定と実ブラウザのHTTPS試験は未完了。
+Mac・Windowsの2端末登録を照合済み。Macは本人のHTTPS初回準備後、OS信頼・loopback名前解決・Chromeでの警告なし表示と接続/証明書の有効表示まで確認した。Windowsは公開証明書の未配布・未信頼登録・接続Offを維持する。現在の判定は末尾の「MacのChrome接続確認」を優先する。
 
 2端末の登録とserial判定の表示記録を照合後、新規登録口をBlock Everyoneだけへ保存・再読込確認済み。既存Mac登録の保持とOffもCLI確認した。Windowsの再接続や新規端末拒否を実測した証拠にはしない。
 
@@ -15,7 +15,7 @@ Windowsに続いてMacも登録済み。主担当が管理画面で2端末・各
 - Windows専用Include profileは、指定会社メールの完全一致AND Windowsを保持。管理画面で対象1台とLast active profileの一致を照合した。これは最後に取得された設定の証拠であり、接続後の適用・経路の合格とは区別する。
 - Windows用の登録helperとXMLは**未配布・未実行で、配布案は保留**。Windowsでは秘密値を渡す旧手順を進めない。
 - 通常の従業員ログイン不要は維持する。公式には、Gatewayのclient session期限を指定しなければ既定で無期限となるため、初回登録と毎日のログインは分けて扱える。実際の再認証設定の確認と、Windowsの再起動・再接続試験は未実施。[公式Client sessions](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/configure/client-sessions/)
-- MacとWindowsの2端末が一覧にあり、各registration 1件と専用Last active profileの一致を確認した。両端末のposture照合と新規登録許可の閉鎖は別途完了を確認し、閉鎖後に両端末の再起動・再接続を試す。この更新でメール・Tokenの登録許可が閉鎖済みとは扱わない。登録状態は削除まで持続する公式仕様だが、実機の再接続成功を先取りしない。[公式Device registration](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/device-registration/)
+- MacとWindowsの2端末が一覧にあり、各registration 1件と専用Last active profileの一致を確認した。新規登録口はBlock Everyoneだけを保存・再読込確認済み。閉鎖後の両端末の再起動・再接続と、新規端末の拒否は実測が残る。登録状態は削除まで持続する公式仕様だが、実機の再接続成功を先取りしない。[公式Device registration](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/device-registration/)
 
 ## 前段の準備記録（登録方式は上記を優先）
 
@@ -55,7 +55,8 @@ Get-CimInstance Win32_BIOS | Select-Object -ExpandProperty SerialNumber
 - [x] Access Applicationsの初回作成画面を確認後One-time PINを追加。Enrollmentは全IdP許可Off・OTPだけ・instant authentication Onとして保存し、再読込で確認。既存の特定token Service Authを保持した。
 - [x] ユーザーが指定会社メールによる初回登録完了と接続Offを申告した。コード共有、helper/XMLの配布やService Tokenの手入力は行っていない。
 - [x] 主担当が会社の管理画面でWindowsの登録1件・active registration 1件・指定メール一致を照合し、Client Disconnectedを確認した。一般向け1.1.1.1の接続表示を根拠にはしていない。
-- [ ] Cloudflare管理画面の対象登録とpostureをWindows実機と照合し、対象がMacとWindowsの2台だけであることを確認する。2台登録後はメール・Tokenの新規登録許可を閉じ、再起動・再接続の正常動作を試す。
+- [x] 管理画面でMac・Windowsの2端末・各registration 1件とserial判定の表示を照合し、新規登録口をBlock Everyoneだけへ保存・再読込確認した。
+- [ ] 新規登録許可の閉鎖後、両端末の再起動・再接続と、新しい端末の登録拒否を実機で確認する。
 
 posture検査は登録後に行われ、登録許可そのものでは利用できない。OTPで登録できることを2端末限定の接続許可の代わりにはしない。旧Service Token方式の公式要件は前段の参考資料として保持する。[登録許可](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/device-enrollment/)・[管理設定パラメーター](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/deployment/mdm-deployment/parameters/)
 
@@ -123,7 +124,7 @@ Last active profileはWindows専用profileと一致し、profileのdetailsでも
 
 対象2台が揃っていないため、新規登録許可は未閉鎖。今回の作業ではWeb設定変更・実API呼び出しは0件。登録の照合を理由に、実機11項目の未実施判定は変更しない。実際のメール、端末名・ID、シリアル番号等は記載しない。
 
-### Mac登録とHTTPS用証明書の準備（最新）
+### Mac登録とHTTPS用証明書の準備（前段の記録）
 
 ユーザーの明示許可後、Mac本人が登録helperを実行。主担当がCLIで会社組織への登録成功とDisconnectedManual、macOS 27.0.1 / client 2026.8.2110を確認した。取得したprofileは予定のMac専用profileと一致し、warp+doh / MASQUE / Include、always_on false、interface DNS false、Include宛先2件を照合した。管理画面でもMac・Windowsの2端末、各registration 1件、各専用Last active profileの一致を確認した。Windowsの接続Offと、実機11項目の未実施判定は維持する。
 
@@ -131,4 +132,18 @@ HTTPSは、今回確認したChromeポリシーがString形式を扱えなかっ
 
 旧CA方式の証明書は履歴として保存。Macのloopback上のモック8443番を新leafへ切り替えて再起動し、ローカルTLS試験8/8件に合格した。追加実API呼び出しは0件。この合格はOSの信頼設定やWARP実経路を使うHTTPS表示の証拠ではない。
 
-レビュー済みのMac用HTTPS初回helperは本人へ手元実行を依頼中。OSの信頼設定の完了・実ブラウザのHTTPS試験は未確認で、Windowsへの公開証明書配布・信頼登録・Chrome試験もすべて残件とする。実際のメール、登録ID、シリアル番号、秘密鍵、端末固有のホスト名等は本書へ記載しない。
+この時点では、レビュー済みのMac用HTTPS初回helperを本人へ手元実行依頼中だった。Windowsへの公開証明書配布・信頼登録・Chrome試験は残件とする。実際のメール、登録ID、シリアル番号、秘密鍵、端末固有のホスト名等は本書へ記載しない。
+
+### MacのOS信頼・名前解決の確認（前段の記録）
+
+ユーザーがMacのHTTPS初回準備完了を申告後、主担当が読み取り確認した。Macの試用ホストは127.0.0.1へ解決し、hostsバックアップはroot所有・権限0600で存在する。macOSの通常の信頼設定を使う証明書検査では、正しい試用ホストがexit 0、別ホストがexit 1となり、ホスト一致を維持したOS側の検証を確認した。
+
+これはMacのOS信頼とローカルの名前解決の証拠であり、Chrome/IABの実ブラウザ表示やWARP経路の合格とはしない。主担当による実ブラウザ操作はこれから。Windowsは接続Offで、公開証明書の配布・信頼登録・Chrome試験はいずれも未実施。Windows実機11項目もすべて未実施のまま維持する。
+
+新規登録口のBlock Everyoneだけの保存・再読込確認と、2端末・各registration 1件は前段で確認済み。今回の確認で実API呼び出し・追加課金はなく、メール・ID・シリアル番号等の実値は記載しない。
+
+### MacのChrome接続確認（最新）
+
+主担当がChromeでHTTPSのホームと基本4機能の各入力画面を警告なしに表示した。Chrome本体の対象ホストのサイト情報で「この接続は保護されています」「証明書は有効です」を確認。生成・送信は行わず、追加API/課金0。検証後もMac WARPはDisconnected/Manualだった。
+
+Macは名前解決がloopbackのため、今回の合格をWindowsやGateway経由の接続合格へ流用しない。WindowsはOffのまま、公開leafの配布・信頼登録・Chrome試験と実機11項目は未実施を維持する。[詳細](restricted-trial-plan.md#macのchrome接続確認最新)

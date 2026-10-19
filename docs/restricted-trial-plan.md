@@ -1,6 +1,6 @@
 # 2端末限定の試用接続計画と進捗
 
-最新: MacとWindows計2端末の登録・各専用Last active profile・serial判定の表示記録を確認し、新規登録口はBlock Everyoneだけへ閉鎖した。MacはCLIの専用profile/Include2宛先/自動接続Offも確認。ダミーHTTPSの証明書変更とローカル8件は合格。MacのHTTPS信頼・名前解決helperは本人実行の結果待ちで、Chrome表示と接続/拒否/失効の実機検証は未完了。追加API/課金0、WindowsはOff。以下は履歴を含み、末尾の追記を優先する。
+最新: Mac本人のHTTPS準備後、loopback名前解決とOSの通常証明書検証を確認。Chromeでホームと基本4画面を警告なしに表示し、「この接続は保護されています」「証明書は有効です」を確認した。生成・送信0、追加API/課金0。Mac WARPはOff、WindowsもOffを維持。前段で2端末登録と新規登録口の閉鎖は確認済み。WARP/Gateway経由とWindowsのHTTPS/拒否/失効は未検証。以下は履歴を含み、末尾の追記を優先する。
 
 確認日: 2026-10-19。対象はこのMacと会社共用PC 1台（Windows 11 / Chrome）。従業員ごとのログインを要求しない。会社ドメイン `superyamadaya.com` はWix DNSのまま維持する。
 
@@ -185,3 +185,15 @@ HTTPSは、Chromeがhostname付きmacOS trust policyを無視する実装を一�
 本人実行用HTTPS helperは、公開証明書の固定指紋/CA:false/単一SAN/期限検査、単一hosts追記・root専用0600バックアップ・競合/symlink拒否、本人loginキーチェーンでSSLだけの信頼を準備。sudo Pythonは独立レビュー指摘により`-I`で起動し、cwdからのモジュール混入を防いだ。構文・validator・独立レビューは完了、実行結果は本人確認待ち。Terminal操作はツール安全制限で行えないため、Finderで隠しファイル表示を有効にし、対象helperを選択して案内した。パスワードは本人が直接入力する。
 
 現在未完了: Macのhosts/OS信頼反映、Chromeの警告なし表示、WARP経由Gateway実通信、Windowsへの公開leaf配布・信頼・実機11項目。Macでloopbackへ直接表示できてもGateway合格とはしない。WindowsはOffのままで変更していない。実API/追加入金/追加契約0、既存費用上限・未確定保留・期限・Wix DNSは維持する。
+
+### MacのChrome接続確認（最新）
+
+本人から「Mac HTTPS準備完了」の申告後、設定を変更せず読み取り検証した。試用ホストは127.0.0.1へ解決し、元のhostsバックアップはroot所有0600で存在。macOS標準の通常信頼で、当該サーバー証明書の正しいホスト検証はexit 0、別ホストはexit 1。証明書はCA:falseを維持していた。
+
+Chromeに新しい試験タブを開き、HTTPSのホームを表示。続けてPOP作成・文章作成・画像作成・AIチャットの各画面へ移動し、操作見本の表示、基本4機能の導線、POPのA4/A3縦横の選択肢を確認した。Chrome本体で対象ホストのサイト情報を開き、「この接続は保護されています」と「証明書は有効です」を確認した。警告ページの回避、検証の無効化、生成/送信操作は行っていない。ブラウザ操作見本の画面表示を、実AI生成の試験合格とは扱わない。
+
+最初のChromeタブ作成呼び出しは応答待ちで終了したため、一覧で未作成を確認後、同じChromeの取得済みブラウザIDを使って作成し直した。再送したのは画面を開く操作だけで、AIジョブの再送ではない。Chrome以外のブラウザは今回の合格に含めない。
+
+検証後のMac WARPはDisconnected/Manual。名前解決がloopbackなので、これはMac内のHTTPS表示・OS/Chrome信頼の確認であり、GatewayのAllow/Block・未登録端末拒否・失効・Windows接続の証拠ではない。Windowsはユーザーの申告どおりOffのまま、設定・接続は変更していない。公開leafの配布・Windows信頼登録と実機11項目は引き続き残件。
+
+証跡は非公開のChromeホーム画像・接続セキュリティ表示画像・検証JSONに保存。公開報告へ実メール、端末番号、秘密値は載せていない。今回の生成/送信0、追加API/課金0。既存実AIサーバー・台帳・APIキー・$10上限・unknown3件$0.45・期限・Wix DNSは変更していない。

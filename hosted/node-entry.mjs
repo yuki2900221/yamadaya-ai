@@ -31,7 +31,8 @@ export function nodeHandler({ handle, upstreamOrigin }) {
 
 let runtime, handler;
 export default async function entry(req, res) {
-  // Unconfigured deployments fail closed; real AI is not loaded in this stage.
+  // Unconfigured deployments fail closed. The configured runtime selects the
+  // isolated mock or the explicitly approved, budget-controlled live trial.
   if (!handler) {
     try { runtime = createConfiguredRuntime(process.env); handler = nodeHandler({ handle: runtime.handle, upstreamOrigin: runtime.config.upstreamOrigin }); }
     catch { res.statusCode = 503; res.setHeader('Cache-Control', 'private, no-store'); res.end('接続準備中です。'); return; }

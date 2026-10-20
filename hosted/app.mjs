@@ -2,14 +2,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { FEATURES, validateJob, error as contractError } from '../shared/contracts.mjs';
-import { reviewProposal } from '../shared/proposal-policy.js';
+import { reviewProposal, sourceChoices, DESIGN_CHOICES, CONFIRMATION_CHOICES } from '../shared/proposal-policy.js';
 import { createDemoProvider } from '../server/demo.mjs';
 import { stageImage, IMAGE_CHUNK_BYTES, digest } from './images.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const equal = (a, b) => typeof a === 'string' && typeof b === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const error = (...args) => Object.assign(contractError(...args), { publicMessage: true });
-const safeCodes = new Set(['INVALID_REQUEST','GATEWAY_REQUIRED','INVALID_PATH','METHOD_REJECTED','ORIGIN_REJECTED','RANGE_REJECTED','BODY_TOO_LARGE','DEVICE_REVOKED','PROOF_REPLAYED','AUTH_STORE_UNAVAILABLE','NOT_IMPORTED','TRIAL_EXPIRED','SESSION_EXPIRED','DEVICE_REQUIRED','NOT_FOUND','ID_REUSED','UNCERTAIN_DUPLICATE','UNCERTAIN','BUSY','RATE_LIMIT','BUDGET_LIMIT','EXECUTOR_REQUIRED','LEASE_EXPIRED','ALREADY_FINISHED','LEDGER_UNAVAILABLE','FORBIDDEN','CSRF_REJECTED','IMAGE_MISMATCH','COST_UNCERTAIN','INVALID_IMAGE','STORAGE_UNAVAILABLE']);
+const safeCodes = new Set(['INVALID_REQUEST','GATEWAY_REQUIRED','INVALID_PATH','METHOD_REJECTED','ORIGIN_REJECTED','RANGE_REJECTED','BODY_TOO_LARGE','DEVICE_REVOKED','PROOF_REPLAYED','AUTH_STORE_UNAVAILABLE','NOT_IMPORTED','NOT_CONFIGURED','SEARCH_DISABLED','TRIAL_EXPIRED','SESSION_EXPIRED','DEVICE_REQUIRED','NOT_FOUND','ID_REUSED','UNCERTAIN_DUPLICATE','UNCERTAIN','BUSY','RATE_LIMIT','BUDGET_LIMIT','EXECUTOR_REQUIRED','LEASE_EXPIRED','ALREADY_FINISHED','LEDGER_UNAVAILABLE','FORBIDDEN','CSRF_REJECTED','IMAGE_MISMATCH','COST_UNCERTAIN','INVALID_IMAGE','STORAGE_UNAVAILABLE']);
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
 const security = {
   'Cache-Control': 'private, no-store, max-age=0', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY',
@@ -25,9 +25,11 @@ export function hostedStopReason(usage, now) {
   return null;
 }
 
-/** Hosted preparation ONLY: no live provider/key loading. All calls use a mock. */
-export function createHostedApp({ ledger, verify, storage, publicOrigin, sessionSecret, staticRoot = path.resolve(import.meta.dirname, '../dist'), mockProvider = createDemoProvider(), now = () => Date.now(), sessionTtlMs = 15 * 60000 } = {}) {
+/** Both modes use the same device, session, ledger and private-image boundary. */
+export function createHostedApp({ ledger, verify, storage, publicOrigin, sessionSecret, staticRoot = path.resolve(import.meta.dirname, '../dist'), mode = 'demo', provider, beforeDispatch, mockProvider = createDemoProvider(), now = () => Date.now(), sessionTtlMs = 15 * 60000 } = {}) {
   if (!ledger || typeof verify !== 'function' || !storage || typeof sessionSecret !== 'string' || Buffer.byteLength(sessionSecret) < 32 || !publicOrigin?.startsWith('https://') || sessionTtlMs > 15 * 60000 || sessionTtlMs < 1000) throw Error('Hosted configuration required');
+  if (!['demo','live'].includes(mode) || (mode === 'live' && (typeof provider?.run !== 'function' || typeof provider?.status !== 'function' || typeof beforeDispatch !== 'function'))) throw Error('Explicit hosted provider configuration required');
+  const demo = mode === 'demo', ai = demo ? mockProvider : provider;
   const cookieName = '__Host-yamadaya_trial';
   const cookie = value => `${cookieName}=${value}; HttpOnly; Secure; SameSite=Strict; Path=/${value ? '' : '; Max-Age=0'}`;
   const csrfFor = (sid, deviceId) => createHmac('sha256', sessionSecret).update(`csrf:v2:${deviceId}:${sid}`).digest('hex');
@@ -48,7 +50,7 @@ export function createHostedApp({ ledger, verify, storage, publicOrigin, session
     const value = cached?.value ?? cached;
     const safe = record.state === 'succeeded' ? value : null;
     return { id: record.id, state: record.state, result: safe || null, resultUnavailable: record.state === 'succeeded' && !safe,
-      message: record.state === 'unknown' ? '結果または課金が未確定です。自動で再送しません。' : record.state === 'sending' ? '作成しています。' : !safe ? '処理は完了していますが、会話本文・提案は保存していません。同じ操作は再送しません。' : '', billing: 'モック・実API料金なし' };
+      message: record.state === 'unknown' ? '結果または課金が未確定です。自動で再送しません。' : record.state === 'sending' ? '作成しています。' : !safe ? '処理は完了していますが、会話本文・提案は保存していません。同じ操作は再送しません。' : '', billing: demo ? 'モック・実API料金なし' : record.state === 'succeeded' ? 'usage計算・請求未照合' : '未確定' };
   }
 
   return async function handle(request) {
@@ -83,7 +85,13 @@ export function createHostedApp({ ledger, verify, storage, publicOrigin, session
           await ledger.createSession(owner, auth.deviceId, hash(csrfFor(sid, auth.deviceId)), now() + sessionTtlMs);
         } else await ledger.touchSession(owner, auth.deviceId, now() + sessionTtlMs);
         const usage = await ledger.usage();
-        return json(200, { csrf: csrfFor(sid, auth.deviceId), mode: 'demo', capabilities: FEATURES, connected: false, imageConnected: false, budgetRemainingUsd: null, idleMinutes: sessionTtlMs / 60000, searchEnabled: true, spendingPaused: usage.paused ?? usage.uncertain > 0, stopReason: hostedStopReason(usage, now()), oneTestId: null, oneTestFeature: null }, { 'Set-Cookie': cookie(sid) });
+        const status = demo ? { connected: false, imageConnected: false, searchEnabled: true } : provider.status();
+        const stopReason = hostedStopReason(usage, now()) || status.stopReason || null;
+        return json(200, { csrf: csrfFor(sid, auth.deviceId), mode, capabilities: FEATURES,
+          connected: status.connected === true, imageConnected: status.imageConnected === true,
+          budgetRemainingUsd: demo ? null : Math.max(0, (usage.limit - usage.reserved) / 1e6), idleMinutes: sessionTtlMs / 60000,
+          searchEnabled: status.searchEnabled === true, spendingPaused: Boolean(status.stopReason) || (usage.paused ?? usage.uncertain > 0),
+          stopReason, oneTestId: null, oneTestFeature: null }, { 'Set-Cookie': cookie(sid) });
       }
       if (pathname === '/api/end' && request.method === 'POST') {
         const token = sid && csrfFor(sid, auth.deviceId);
@@ -118,23 +126,35 @@ export function createHostedApp({ ledger, verify, storage, publicOrigin, session
       if (!request.headers.get('content-type')?.startsWith('application/json')) throw error(415, 'JSONで送信してください。');
       if (auth.body.length > 3_000_000) throw error(413, '画像または入力が大きすぎます。');
       let body; try { body = validateJob(JSON.parse(new TextDecoder().decode(auth.body))); } catch (e) { throw e.status ? e : error(400, '入力を読み取れません。'); }
+      if (!demo) await beforeDispatch(body.feature, body.input);
       const requestHash = hash(JSON.stringify({ feature: body.feature, input: body.input }));
       const reservation = await ledger.reserve({ id: body.id, owner, feature: body.feature, requestHash, search: body.input.search === true });
       if (reservation.duplicate) return json(200, await jobResponse(reservation.record, owner));
       dispatched = true;
-      let staged, published = false;
+      let staged, published = false, measuredCostMicros = null;
       try {
-        const generated = await mockProvider.run(body.feature, body.input);
+        const generated = await ai.run(body.feature, body.input);
+        const calculated = Number.isFinite(generated.cost) && generated.cost >= 0 ? Math.ceil(generated.cost * 1e6) : null;
+        const costMicros = Number.isSafeInteger(calculated) ? calculated : null;
+        measuredCostMicros = costMicros;
         let value = generated.result;
         if (body.feature === 'pop') {
-          const safe = reviewProposal({ info: body.input.prompt, atmosphere: '', paper: body.input.paper || 'a4p', mood: ({ '明るく': 'lively', '自然に': 'fresh', '落ち着いて': 'premium', 'やさしく': 'friendly' })[body.input.mood || '明るく'] }, { headlines: [value.headline, value.headline, value.headline], catchphrase: value.copy, direction: value.direction, confirmation_points: value.checks });
-          value = { headline: safe.proposal.headlines[0], headlines: [...new Set(safe.proposal.headlines)], copy: safe.proposal.catchphrase, direction: safe.proposal.direction, checks: safe.proposal.confirmation_points, paper: safe.paper.code, adjusted: safe.adjusted, demo: true };
+          const planInput = { info: body.input.prompt, atmosphere: '', paper: body.input.paper || 'a4p', mood: ({ '明るく': 'lively', '自然に': 'fresh', '落ち着いて': 'premium', 'やさしく': 'friendly' })[body.input.mood || '明るく'] };
+          // The provider's optional checks may be empty. They are UI guidance,
+          // never printed copy, and must not turn a valid paid proposal into an
+          // unbillable-looking error. Blank/overlong design text uses the same
+          // fixed, source-constrained policy as the local prototype.
+          const headline = value.headline?.trim() ? value.headline : sourceChoices(planInput).headlines[0];
+          const direction = value.direction?.trim() && value.direction.length <= 500 ? value.direction : DESIGN_CHOICES[planInput.mood];
+          const safe = reviewProposal(planInput, { headlines: [headline, headline, headline], catchphrase: value.copy, direction,
+            confirmation_points: value.checks.length ? value.checks : CONFIRMATION_CHOICES });
+          value = { headline: safe.proposal.headlines[0], headlines: [...new Set(safe.proposal.headlines)], copy: safe.proposal.catchphrase, direction: safe.proposal.direction, checks: safe.proposal.confirmation_points, paper: safe.paper.code,
+            adjusted: safe.adjusted || headline !== generated.result.headline || direction !== generated.result.direction || !generated.result.checks.length, demo };
         }
-        const costMicros = Number.isFinite(generated.cost) && generated.cost >= 0 ? Math.ceil(generated.cost * 1e6) : null;
         if (costMicros === null || costMicros > reservation.record.hold) throw error(409, '費用を確認できません。新しい送信を停止します。', 'COST_UNCERTAIN');
         if (body.feature === 'image') {
-          staged = await stageImage(storage, value.image, { mock: true });
-          value = { demo: true, paper: value.paper, imageManifest: { ...staged, expires: now() + sessionTtlMs, path: `/api/images/${body.id}/` } };
+          staged = await stageImage(storage, value.image, { mock: demo });
+          value = { demo, paper: value.paper, imageManifest: { ...staged, expires: now() + sessionTtlMs, path: `/api/images/${body.id}/` } };
         }
         await ledger.finish({ id: body.id, owner, executorToken: reservation.executorToken, state: 'succeeded', costMicros });
         if (!(await ledger.getSession(owner, auth.deviceId, now()))) {
@@ -153,7 +173,9 @@ export function createHostedApp({ ledger, verify, storage, publicOrigin, session
         return json(200, await jobResponse({ ...reservation.record, state: 'succeeded' }, owner, value));
       } catch (e) {
         if (staged && !published) { try { await storage.remove(staged.key); } catch { /* private inventory cleanup reaps orphan objects too */ } }
-        if ((await ledger.get(body.id, owner))?.state === 'sending') await ledger.finish({ id: body.id, owner, executorToken: reservation.executorToken, state: 'unknown', costMicros: null });
+        // A valid usage calculation survives output/storage failure or a hold
+        // overrun. It remains unreconciled, but must not reduce the budget hold.
+        if ((await ledger.get(body.id, owner))?.state === 'sending') await ledger.finish({ id: body.id, owner, executorToken: reservation.executorToken, state: 'unknown', costMicros: measuredCostMicros });
         throw e;
       }
     } catch (e) {

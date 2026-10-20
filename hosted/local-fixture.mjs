@@ -8,7 +8,7 @@ import { createOriginVerifier } from './origin-auth.mjs';
 import { createHostedApp } from './app.mjs';
 
 const sha = value => createHash('sha256').update(value).digest('hex');
-export async function createLocalFixture({ mockProvider, staticRoot } = {}) {
+export async function createLocalFixture({ mockProvider, staticRoot, mode = 'demo', provider, beforeDispatch } = {}) {
   const db = new PGlite();
   await db.exec("CREATE ROLE anon NOLOGIN; CREATE ROLE authenticated NOLOGIN; CREATE ROLE service_role NOLOGIN; SET yamadaya_trial.migration_target='dedicated-project';");
   await db.exec(await readFile(new URL('./migrations/001-hosted.sql', import.meta.url), 'utf8'));
@@ -28,7 +28,7 @@ export async function createLocalFixture({ mockProvider, staticRoot } = {}) {
       const current = await ledger.getDevice(deviceId);
       return current?.status === 'active' && current.fingerprint_sha256 === fingerprintSha256 && current.not_before <= now && current.not_after > now;
     } });
-  const makeApp = () => createHostedApp({ ledger: new HostedLedger(db), verify, storage, publicOrigin, sessionSecret, mockProvider, staticRoot });
+  const makeApp = () => createHostedApp({ ledger: new HostedLedger(db), verify, storage, publicOrigin, sessionSecret, mockProvider, staticRoot, mode, provider, beforeDispatch });
   let active = makeApp();
   const gateway = createGateway({ publicOrigin, upstreamOrigin, secret, approvedDevices: devices, fetchImpl: request => active(request) });
   const request = (route, { method = 'GET', headers = {}, body, device = 0, registered = true } = {}) => {

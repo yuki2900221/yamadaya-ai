@@ -7,7 +7,7 @@ export class Ledger {
   if(!Number.isFinite(budgetUsd)||budgetUsd<0||budgetUsd>10)throw Error('Budget must be between 0 and the approved 10 USD.');
   if(file!==':memory:'){mkdirSync(path.dirname(file),{recursive:true,mode:0o700});}
   this.db=new DatabaseSync(file);this.now=now;this.limit=Math.round(budgetUsd*1e6);
-  this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,owner TEXT NOT NULL,feature TEXT NOT NULL,state TEXT NOT NULL,hold INTEGER NOT NULL,cost INTEGER,created INTEGER NOT NULL,finished INTEGER,request_hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS budget(id INTEGER PRIMARY KEY CHECK(id=1),limit_micros INTEGER NOT NULL);');
+  this.db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,owner TEXT NOT NULL,feature TEXT NOT NULL,state TEXT NOT NULL,hold INTEGER NOT NULL,cost INTEGER,created INTEGER NOT NULL,finished INTEGER,request_hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS budget(id INTEGER PRIMARY KEY CHECK(id=1),limit_micros INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS trial_cutover(id INTEGER PRIMARY KEY CHECK(id=1),snapshot_hash TEXT NOT NULL,approved_until INTEGER NOT NULL);');
   const old=this.db.prepare('SELECT limit_micros FROM budget WHERE id=1').get();
   if(old && old.limit_micros!==this.limit)throw Error('Existing trial budget differs. Review ledger locally; do not reset it.');
   this.db.prepare('INSERT OR IGNORE INTO budget VALUES(1,?)').run(this.limit);
@@ -32,6 +32,9 @@ export class Ledger {
  reserve(id,owner,feature,search=false,requestHash='',continuation=null,acknowledgement=null){
   this.db.exec('BEGIN IMMEDIATE');
   try{
+   // A metadata transfer never creates another USD 10 allowance. The local
+   // executor stays disabled after cutover, even if it is restarted later.
+   if(this.db.prepare('SELECT id FROM trial_cutover WHERE id=1').get())throw error(409,'試用は専用Webアプリへ移行済みです。このPCの旧アプリからは送信できません。','TRIAL_MOVED');
    const old=this.db.prepare('SELECT * FROM jobs WHERE id=?').get(id);
    if(old){if(old.owner!==owner)throw error(404,'この操作は見つかりません。');if(old.request_hash!==requestHash)throw error(409,'同じ操作IDで内容を変更できません。');this.db.exec('COMMIT');return {record:old,duplicate:true};}
    const u=this.usage(),hold=Math.round(RESERVES[feature==='chat'&&search?'chatSearch':feature]*1e6);

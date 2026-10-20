@@ -4,6 +4,8 @@
 
 入口は既存の `https://ai-mock.superyamadaya.com/`、配備先は既存Vercel project `yamadaya-ai-trial`。先行するモック配備の結果は[修正版反映報告](mock-release-20261020.md)を参照し、その合格を今回の実AI試験へ流用しない。
 
+採用理由と許可範囲の正本は[ADR-0015](decisions/ADR-0015-two-device-live-trial.md)。
+
 ## 実施済みと未完了
 
 | 対象 | 本書更新時点の確認結果 | 残る作業 |
@@ -59,7 +61,7 @@
 
 POPの保存PDFは **999,518 bytes、1ページ、209.9999998 × 296.9999987 mm**。埋込画像は1440 × 2032 pxの1オブジェクト、抽出できる選択テキストはなかった。描画の目視で「青森県産りんご」「1袋398円（税込）」「10/25限り」を読め、操作案内など余計なUI文言は認めなかった。配置矩形は約 x=5.000 mm、y=7.389 mm、幅200.000 mm、高さ282.222 mm。実効解像度は約182.88 ppiで、300 ppiの品質目安には達していない。画像型の用紙・内容確認であり、旧要素型の日本語フォント埋込み・文字抽出・要素位置差の合格を引き継がない。
 
-CloudflareのSecurity Analyticsでは、15:36:26 JSTの正規Macの `/api/session` が `Block by Custom rules`、通信方式 `HTTP/3` と確認できた。どの証明書属性で拒否されたかはこの表示だけでは分からない。HTTP/3とmTLSの組合せを次の非課金診断対象とし、zone全体のTLS/HTTP/3設定は変更していない。
+CloudflareのSecurity Analyticsでは、15:36:26 JSTの正規Macの `/api/session` が `Block by Custom rules`、通信方式 `HTTP/3` と確認できた。どの証明書属性で拒否されたかはこの表示だけでは分からない。HTTP/3とmTLSの組合せを次の非課金診断対象とし、zone全体のTLS/HTTP/3設定は変更していない。単発HTTP/1.1診断helperはローカルでコンパイルできたが、証明書照会段階で停止し、HTTP要求は送っていない。したがって通信方式による差の実証には数えない。Cloudflare公式の[プロトコル診断](https://developers.cloudflare.com/speed/optimization/protocol/troubleshooting/protocol-troubleshooting/)にあるHTTP/1.1との比較を候補とするが、今回の根本原因を同資料だけで断定しない。
 
 画像編集時の401／403を受け、画面は `closeLocally` により入力・結果を消去した。利用終了の再確認も失敗し、別の新規ブラウザタブでの `/api/session` GETでもCloudflareの「Sorry, you have been blocked」を確認した。WAFを弱めず、生成の再送もせずに停止している。**認証の不安定さの原因は未確定で、修正済み・Macの安定接続合格とは扱わない。** Windowsは公開証明書の受渡し待ちで、取込・Chrome設定・接続確認が残る。
 
@@ -85,7 +87,7 @@ Vercelの配備 `dpl_889uA5QfTt3Z7sSkWwiRgc5QsQSV` がREADYとなり、固定ali
 
 最終ソースのローカル自動試験は **315／315合格、失敗0、skip 0**。外部providerは偽の応答、DBは隔離した架空データで検証した。実AIの品質・料金・実Windows受入の合格件数ではない。
 
-基本4機能・写真編集・検索、送信前予約、重複拒否、元unknown保持と新unknownでの両端末停止、期限境界、mockのキー未参照、公開static迂回拒否、秘密／旧台帳／管理SQLのbundle除外を確認した。実provider同梱の検査には `--allow-live-provider` の明示が必要で、同梱と実行有効化を区別する。本書を含む公開許可リストは96ファイル、秘密検出0。最終ソースと隔離buildの32入力hashが一致し、配備成果物247ファイル・公開static 0を確認した。資格情報・実台帳・写真・証明書・実生成物をGitHubへ含めない。
+基本4機能・写真編集・検索、送信前予約、重複拒否、元unknown保持と新unknownでの両端末停止、期限境界、mockのキー未参照、公開static迂回拒否、秘密／旧台帳／管理SQLのbundle除外を確認した。実provider同梱の検査には `--allow-live-provider` の明示が必要で、同梱と実行有効化を区別する。本書を含む公開許可リストは97ファイル、秘密検出0。最終ソースと隔離buildの32入力hashが一致し、配備成果物247ファイル・公開static 0を確認した。資格情報・実台帳・写真・証明書・実生成物をGitHubへ含めない。
 
 ## キー取扱いの記録
 

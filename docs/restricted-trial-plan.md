@@ -1,5 +1,7 @@
 # 2端末限定の試用接続計画と進捗
 
+導入・保守の簡略化は[別紙で比較](two-device-simplification-comparison.md)した。状態は提案・未採用で、現在の認証・接続設定を変更したものではない。
+
 最新: Mac本人のHTTPS準備後、loopback名前解決とOSの通常証明書検証を確認。Chromeでホームと基本4画面を警告なしに表示し、「この接続は保護されています」「証明書は有効です」を確認した。生成・送信0、追加API/課金0。Mac WARPはOff、WindowsもOffを維持。前段で2端末登録と新規登録口の閉鎖は確認済み。WARP/Gateway経由とWindowsのHTTPS/拒否/失効は未検証。以下は履歴を含み、末尾の追記を優先する。
 
 確認日: 2026-10-19。対象はこのMacと会社共用PC 1台（Windows 11 / Chrome）。従業員ごとのログインを要求しない。会社ドメイン `superyamadaya.com` はWix DNSのまま維持する。

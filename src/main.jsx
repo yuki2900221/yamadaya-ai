@@ -5,6 +5,7 @@ import * as api from './api.js';
 import {createImagePdf} from './pdf.js';
 import {PAPERS} from '../shared/contracts.mjs';
 import {sourceChoices,DESIGN_CHOICES} from '../shared/proposal-policy.js';
+import {createSessionLifecycle,pauseMessage} from './session-lifecycle.js';
 import './style.css';
 const TOOLS=[{id:'chat',name:'AIチャット',description:'質問・調べもの',icon:'chat',color:'mint'},{id:'pop',name:'POP作成',description:'商品情報からPOPを作る',icon:'pop',color:'peach'},{id:'image',name:'画像作成',description:'画像を作る・修正する',icon:'image',color:'lavender'},{id:'writing',name:'文章作成',description:'お知らせ・返信・商品紹介',icon:'writing',color:'blue'}];
 const SAMPLE='青森県産 りんご\n1袋398円（税込）\nシャキッとした食感・さわやかな甘さ\n10月20日〜22日限定';
@@ -42,33 +43,106 @@ function Pop({run,aiPaused,busy,cancel,onToast}){const[prompt,setPrompt]=useStat
  const choices=plan?sourceChoices({info:prompt,atmosphere:'',paper,mood:({'明るく':'lively','自然に':'fresh','落ち着いて':'premium','やさしく':'friendly'})[mood]}):null;
  return <section className="workspace page-in"><div className="workspace-title"><div><h1>POP作成</h1><p>商品情報から、提案・作成・PDF保存</p></div><div className="button-row"><Button icon="upload" variant="quiet" onClick={()=>fileInput.current.click()}>下書きを開く</Button><input className="sr-only" ref={fileInput} type="file" accept="application/json" aria-label="POPの下書きファイル" onChange={e=>{if(e.target.files?.[0])void restore(e.target.files[0]);}}/>{prompt.trim()&&<Button icon="download" variant="quiet" onClick={save}>下書きを保存</Button>}</div></div><ol className="progress-steps">{['情報を入力','提案を確認','POPを保存'].map((s,i)=><li key={s} className={step===i+1?'active':step>i+1?'done':''}><span>{step>i+1?<Icon name="check" size={14}/>:i+1}</span>{s}</li>)}</ol><Alert message={error}/>{busy?<div className="surface glass"><Pending title={step===1?'提案を作成中':'POPを作成中'} onCancel={cancel}/></div>:step===1?<div className="split-layout pop-input-layout"><form className="surface glass" onSubmit={propose}><div className="section-bar"><h2>商品情報</h2><button type="button" className="text-button" onClick={()=>setPrompt(SAMPLE)}>入力例</button></div><Field label="POPに入れたい情報"><textarea value={prompt} onChange={e=>setPrompt(e.target.value)} maxLength={1500} rows={7} placeholder="商品名・価格・特徴・販売期間など"/></Field><div className="field-pair"><Field label="用紙"><select value={paper} onChange={e=>setPaper(e.target.value)}>{Object.entries(PAPERS).map(([k,p])=><option key={k} value={k}>{p.label}</option>)}</select></Field><Field label="雰囲気"><select value={mood} onChange={e=>setMood(e.target.value)}>{['明るく','自然に','落ち着いて','やさしく'].map(v=><option key={v}>{v}</option>)}</select></Field></div><Photo value={reference} onChange={setReference} onError={setError}/><Button variant="primary full" icon="arrow" disabled={aiPaused||!prompt.trim()}>提案を確認</Button></form><div className="pop-paper-surface glass"><div className="paper-preview" style={{aspectRatio:`${PAPERS[paper].width}/${PAPERS[paper].height}`}}><Icon name="pop" size={44}/><strong>{PAPERS[paper].label}</strong><span>{PAPERS[paper].width} × {PAPERS[paper].height} mm</span><span className="paper-corner"/></div></div></div>:step===2&&plan?<div className="split-layout"><div className="surface glass"><div className="section-bar"><h2>提案を確認</h2><span className="mini-pill">{PAPERS[paper].label} 固定</span></div><p className="muted tiny">未入力の特徴を追加しないため、文章は入力済みの行から選びます。</p><Field label="見出し"><select value={plan.headline} onChange={e=>{setPlan({...plan,headline:e.target.value});setConfirmed(false);}}>{choices.headlines.map(v=><option key={v}>{v}</option>)}</select></Field><Field label="キャッチコピー（任意）" hint="POPに載せる短い文章です。不要なら「入れない」を選べます。"><select value={plan.copy} onChange={e=>{setPlan({...plan,copy:e.target.value});setConfirmed(false);}}>{choices.catchphrases.map(v=><option key={v} value={v}>{v||'入れない'}</option>)}</select></Field><Field label="配色・構図"><select value={plan.direction} onChange={e=>{setPlan({...plan,direction:e.target.value});setConfirmed(false);}}>{Object.values(DESIGN_CHOICES).map(v=><option key={v}>{v}</option>)}</select></Field><label className="check-row"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/><span>商品情報・提案・写真を確認しました。OpenAIへ送り、POPを1枚作成します。</span></label><Button icon="spark" variant="primary full" disabled={aiPaused||!confirmed} onClick={create}>この内容でPOPを作成</Button><Button variant="quiet" onClick={()=>{setStep(1);setConfirmed(false);}}>情報を修正</Button></div><div className="surface glass source-panel"><h2>元の商品情報</h2><p className="source-text">{prompt}</p>{reference&&<img className="reference-preview" src={reference} alt="参照する元の商品写真"/>}<div className="source-meta"><span>用紙</span><strong>{PAPERS[paper].label} · {PAPERS[paper].width} × {PAPERS[paper].height} mm</strong></div><ul className="checks-list">{plan.checks.map((s,i)=><li key={i}><Icon name="check" size={16}/>{s}</li>)}</ul></div></div>:result?<div className="surface glass pop-result-surface"><ImageResult result={result} paper={paper} onError={setError} onToast={onToast}/><Button icon="writing" variant="quiet" onClick={()=>{setStep(2);setConfirmed(false);}}>提案へ戻る</Button></div>:null}</section>;
 }
-function App(){const[visited,setVisited]=useState(['home']),[pending,setPending]=useState(()=>sessionStorage.getItem('yamadaya-pending')||''),[recovered,setRecovered]=useState(null);const[route,setRoute]=useState('home'),[info,setInfo]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[busy,setBusy]=useState(false),[toast,setToast]=useState(''),[epoch,setEpoch]=useState(0),[reduced,setReduced]=useState(false);const controller=useRef(null),sending=useRef(false),help=useRef(),confirmEnd=useRef(),idle=useRef(),toastTimer=useRef(),lastActivity=useRef(Date.now()),lastRefresh=useRef(Date.now());
+function App(){
+ const[visited,setVisited]=useState(['home']),[pending,setPending]=useState(()=>sessionStorage.getItem('yamadaya-pending')||''),[recovered,setRecovered]=useState(null);
+ const[route,setRoute]=useState('home'),[info,setInfo]=useState(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[busy,setBusy]=useState(false),[toast,setToast]=useState(''),[epoch,setEpoch]=useState(0),[reduced,setReduced]=useState(false);
+ const controller=useRef(null),sending=useRef(false),help=useRef(),confirmEnd=useRef(),idle=useRef(),toastTimer=useRef(),lastActivity=useRef(Date.now()),lastRefresh=useRef(Date.now()),bootstrapAttempt=useRef(0),lifecycle=useRef();
+ if(!lifecycle.current)lifecycle.current=createSessionLifecycle({storage:sessionStorage,session:api.session,end:api.end});
+ const life=lifecycle.current;
+ const[endPending,setEndPending]=useState(()=>life.isEnding()),[endPersistent,setEndPersistent]=useState(true);
  const showToast=useCallback(s=>{setToast(s);clearTimeout(toastTimer.current);toastTimer.current=setTimeout(()=>setToast(''),3500);},[]);
- const bootstrap=useCallback(async()=>{setLoading(true);setError('');try{setInfo(await api.session());}catch(e){setError(e.message);}finally{setLoading(false);}},[]);
+ const clearLocal=useCallback(()=>{
+  controller.current?.abort();controller.current=null;sending.current=false;setBusy(false);
+  setInfo(null);setRecovered(null);setEpoch(n=>n+1);setVisited(['home']);setRoute('home');setError('');
+ },[]);
+ const closeLocally=useCallback(()=>{
+  const persisted=life.beginEnd();clearLocal();setEndPersistent(persisted);setEndPending(true);
+ },[life,clearLocal]);
+ const refreshInfo=useCallback(async()=>{
+  const ticket=life.capture();if(!life.canPublish(ticket))return null;
+  try{const value=await api.session();if(!life.canPublish(ticket))return null;setInfo(value);return value;}
+  catch(e){if(life.canPublish(ticket)){
+   setInfo(null);
+   if(e.status===401||e.status===403)closeLocally();
+   setError(e.status===401||e.status===403?'この端末の利用を確認できないため、入力を消去しました。終了を再確認してください。':e.message);
+  }return null;}
+ },[life,closeLocally]);
+ const bootstrap=useCallback(async csrf=>{
+  const attempt=++bootstrapAttempt.current;setLoading(true);setError('');
+  try{
+   if(life.isEnding()){
+    await life.confirmEnd(csrf);
+    if(attempt!==bootstrapAttempt.current)return;
+    setEndPending(false);setEndPersistent(true);setPending('');
+   }
+   await refreshInfo();
+  }catch(e){if(attempt===bootstrapAttempt.current){setInfo(null);setEndPending(life.isEnding());setError('入力はこの画面から消去しました。サーバー側の終了を確認できないため、新しい送信と結果の取得を停止しています。');}}
+  finally{if(attempt===bootstrapAttempt.current)setLoading(false);}
+ },[life,refreshInfo]);
+ const finish=useCallback(async()=>{
+  const csrf=info?.csrf;
+  closeLocally();confirmEnd.current?.close();showToast('この画面の入力と会話を消去しました');
+  await bootstrap(csrf);
+ },[info,closeLocally,bootstrap,showToast]);
  useEffect(()=>{void bootstrap();return()=>{clearTimeout(toastTimer.current);controller.current?.abort();};},[bootstrap]);
- useEffect(()=>{const clear=async()=>{controller.current?.abort();try{if(info)await api.end(info.csrf);}catch{}sessionStorage.removeItem('yamadaya-pending');setPending('');setRecovered(null);setEpoch(n=>n+1);setVisited(['home']);setRoute('home');setInfo(null);await bootstrap();showToast('一定時間操作がなかったため、入力を消去しました。');};const reset=()=>{lastActivity.current=Date.now();clearTimeout(idle.current);idle.current=setTimeout(()=>void clear(),(info?.idleMinutes||15)*60000);if(Date.now()-lastRefresh.current>240000){lastRefresh.current=Date.now();void api.session().then(setInfo).catch(()=>{});}};const visible=()=>{if(!document.hidden&&Date.now()-lastActivity.current>=(info?.idleMinutes||15)*60000)void clear();};reset();for(const event of ['pointerdown','keydown'])window.addEventListener(event,reset);document.addEventListener('visibilitychange',visible);return()=>{clearTimeout(idle.current);for(const event of ['pointerdown','keydown'])window.removeEventListener(event,reset);document.removeEventListener('visibilitychange',visible);};},[info,bootstrap,showToast]);
+ useEffect(()=>{
+  if(endPending)return;
+  const reset=()=>{
+   lastActivity.current=Date.now();clearTimeout(idle.current);idle.current=setTimeout(()=>void finish(),(info?.idleMinutes||15)*60000);
+   if(Date.now()-lastRefresh.current>240000){lastRefresh.current=Date.now();void refreshInfo();}
+  };
+  const visible=()=>{if(!document.hidden&&Date.now()-lastActivity.current>=(info?.idleMinutes||15)*60000)void finish();};
+  reset();for(const event of ['pointerdown','keydown'])window.addEventListener(event,reset);document.addEventListener('visibilitychange',visible);
+  return()=>{clearTimeout(idle.current);for(const event of ['pointerdown','keydown'])window.removeEventListener(event,reset);document.removeEventListener('visibilitychange',visible);};
+ },[info,endPending,finish,refreshInfo]);
  useEffect(()=>{setVisited(v=>v.includes(route)?v:[...v,route]);},[route]);
  async function recoverPending(){
+  const ticket=life.capture();if(!life.canPublish(ticket)||!info)return;
+  const active=()=>life.canPublish(ticket);
   try{
-   const r=await api.recover(pending);
+   const r=await api.recover(pending);if(!active())return;
    if(r.state==='succeeded'&&r.result){
     setError('');setRecovered(r.result);sessionStorage.removeItem('yamadaya-pending');setPending('');showToast('保存されていた処理結果を表示しました');
+   }else if(r.state==='succeeded'&&r.resultUnavailable===true){
+    if(!await refreshInfo()||!active())return;
+    sessionStorage.removeItem('yamadaya-pending');setPending('');setError('');showToast(r.message||'処理は完了していますが、結果は保存していません。同じ操作は再送しません。');
    }else if(r.state==='unknown'&&r.canStartNewOperations===true){
-    setInfo(await api.session());
-    sessionStorage.removeItem('yamadaya-pending');setPending('');setError('');
-    showToast('前の処理は未確定のまま保留しています。新しい操作は利用できます。');
+    if(!await refreshInfo()||!active())return;
+    sessionStorage.removeItem('yamadaya-pending');setPending('');setError('');showToast('前の処理は未確定のまま保留しています。新しい操作は利用できます。');
    }else setError(r.message||'結果を確認中です。再送しません。');
   }catch(e){
+   if(!active())return;
    if(e.status===404){
-    try{setInfo(await api.session());}catch{setError('接続状態を確認できませんでした。前の処理は再送しません。');return;}
-    sessionStorage.removeItem('yamadaya-pending');setPending('');
-    setError('');showToast('前の結果はこの利用では確認できません。未確定の費用は保留したままです。');
-   }else setError(e.message);
+    if(!await refreshInfo()||!active())return;
+    sessionStorage.removeItem('yamadaya-pending');setPending('');setError('');showToast('前の結果はこの利用では確認できません。未確定の費用は保留したままです。');
+   }else if(e.status===401||e.status===403){closeLocally();setError('この端末の利用を確認できないため、入力を消去しました。終了を再確認してください。');}
+   else setError(e.message);
   }
  }
- async function run(feature,input){if(pending||sessionStorage.getItem('yamadaya-pending'))throw Error('前の処理結果を先に確認してください。');if(sending.current)throw Error('処理が終わるまでお待ちください。');if(!info)throw Error('接続状態を確認してください。');if(info.spendingPaused)throw Error('未確定の費用を確認するため、新しいAI送信を停止しています。');setError('');sending.current=true;setBusy(true);const id=feature===info.oneTestFeature&&info.oneTestId?info.oneTestId:crypto.randomUUID();controller.current=new AbortController();try{sessionStorage.setItem('yamadaya-pending',id);setPending(id);const r=await api.job(id,feature,input,info.csrf,controller.current.signal);if(r.state!=='succeeded'||!r.result)throw Error(r.message||'結果を確認できません。自動で再送しません。');sessionStorage.removeItem('yamadaya-pending');setPending('');void api.session().then(setInfo).catch(()=>{});return r.result;}catch(e){if(e.notDispatched){sessionStorage.removeItem('yamadaya-pending');setPending('');}void api.session().then(setInfo).catch(()=>{});throw Error(e.name==='AbortError'?'待機を終了しました。処理や課金は続く場合があります。自動で再送しません。':e.message);}finally{sending.current=false;setBusy(false);controller.current=null;}}
- async function finish(){controller.current?.abort();try{if(info)await api.end(info.csrf);}catch(e){setError(e.message);return;}sessionStorage.removeItem('yamadaya-pending');setPending('');setRecovered(null);setVisited(['home']);setEpoch(v=>v+1);setRoute('home');confirmEnd.current.close();await bootstrap();showToast('入力と会話を消去しました');}
- const tool=TOOLS.find(t=>t.id===route);
- return <div className={`app-shell ${reduced?'reduce-motion':''}`}><div className="ambient ambient-one"/><div className="ambient ambient-two"/><a className="skip-link" href="#main">本文へ移動</a><aside className="sidebar glass"><button className="brand" disabled={busy} onClick={()=>setRoute('home')} aria-label="やまだやAI ホーム"><Mark/><span>やまだやAI<small>（仮）</small></span></button><nav aria-label="基本機能"><button disabled={busy} aria-label="ホーム" className={`nav-item ${route==='home'?'selected':''}`} onClick={()=>setRoute('home')} aria-current={route==='home'?'page':undefined}><Icon name="home"/><span>ホーム</span></button><span className="nav-label">基本機能</span>{TOOLS.map(t=><button key={t.id} aria-label={t.name} className={`nav-item ${route===t.id?'selected':''}`} aria-current={route===t.id?'page':undefined} disabled={busy} onClick={()=>setRoute(t.id)}><Icon name={t.icon}/><span>{t.name}</span>{route===t.id&&<span className="nav-active-dot"/>}</button>)}</nav><div className="sidebar-bottom"><div className="shared-device"><Icon name="monitor"/><span>共用PC<small>基本機能のみ</small></span><Icon name="shield" size={16}/></div><button aria-label="使い方" className="nav-item help-nav" onClick={()=>help.current.showModal()}><Icon name="help"/><span>使い方</span></button></div></aside><div className="main-column"><header className="topbar"><div className="breadcrumb"><span>やまだやAI（仮）</span>{tool&&<><Icon name="chevron" size={13}/><strong>{tool.name}</strong></>}</div><div className="top-actions"><span className={`connection-pill ${info?.mode==='live'?'live':''}`}><i/>{loading?'接続を確認中':info?.mode==='demo'?'操作見本':info?.mode==='live'?(info.spendingPaused?'AI送信を停止中':'AI接続済み'):'接続準備中'}</span><button className="end-session" onClick={()=>confirmEnd.current.showModal()}>利用を終了<Icon name="reset" size={16}/></button></div></header><main id="main" tabIndex={-1} className="main-content">{info?.spendingPaused&&<div className="alert" role="status"><Icon name="help"/><span>費用が未確定の処理があるため、AI送信を停止しています。入力の編集と保存は利用できます。</span></div>}{error&&<Alert message={error}/>}{pending&&!busy&&<div className="recovery-banner"><Alert message="前の処理が残っています。再送せず、結果を確認してください。"/><Button onClick={recoverPending}>前の処理結果を確認</Button></div>}{recovered&&<div className="surface glass recovered"><div className="section-bar"><h2>前の処理結果</h2><Button icon="close" variant="quiet" onClick={()=>setRecovered(null)}>閉じる</Button></div>{recovered.image?<ImageResult result={recovered} paper={recovered.paper} onError={setError} onToast={showToast}/>:<p className="source-text">{recovered.text||[recovered.headline,recovered.copy,recovered.direction].join('\n')}</p>}</div>}<div key={epoch}>{loading?<Skeleton/>:<><div hidden={route!=='home'}><Home navigate={setRoute}/></div>{visited.includes('chat')&&<div hidden={route!=='chat'}><Chat aiPaused={info?.spendingPaused} searchEnabled={info?.searchEnabled} run={run} busy={busy&&route==='chat'} cancel={()=>controller.current?.abort()} onToast={showToast}/></div>}{visited.includes('writing')&&<div hidden={route!=='writing'}><Writing aiPaused={info?.spendingPaused} run={run} busy={busy&&route==='writing'} cancel={()=>controller.current?.abort()} onToast={showToast}/></div>}{visited.includes('pop')&&<div hidden={route!=='pop'}><Pop aiPaused={info?.spendingPaused} run={run} busy={busy&&route==='pop'} cancel={()=>controller.current?.abort()} onToast={showToast}/></div>}{visited.includes('image')&&<div hidden={route!=='image'}><Images aiPaused={info?.spendingPaused} run={run} busy={busy&&route==='image'} cancel={()=>controller.current?.abort()} onToast={showToast}/></div>}</>}</div></main></div><nav className="mobile-nav glass" aria-label="モバイル基本機能">{[{id:'home',icon:'home',name:'ホーム'},...TOOLS].map(t=><button key={t.id} aria-current={route===t.id?'page':undefined} onClick={()=>!busy&&setRoute(t.id)}><Icon name={t.icon}/><span>{t.name}</span></button>)}</nav><div className={`toast ${toast?'show':''}`} role="status"><Icon name="check" size={17}/>{toast}</div><dialog ref={help} className="dialog glass"><div className="section-bar"><h2>使い方</h2><button className="icon-button" aria-label="使い方を閉じる" onClick={()=>help.current.close()}><Icon name="close"/></button></div><ol className="help-steps"><li>基本機能を選びます。</li><li>伝えたい内容を入力して作成します。</li><li>内容を確認し、コピー・保存します。</li><li>使い終わったら「利用を終了」を押します。</li></ol><p className="muted">顧客・従業員の個人情報や機密情報は入力しないでください。業務システムや社内ファイルには接続していません。</p><label className="check-row"><input type="checkbox" checked={reduced} onChange={e=>setReduced(e.target.checked)}/><span>動きを控えめにする</span></label><p className="muted tiny">15分操作がないと入力を消去します。{info?.mode==='demo'&&'現在は操作見本です。実AIへの送信・課金はありません。'}</p></dialog><dialog ref={confirmEnd} className="dialog glass"><h2>利用を終了しますか？</h2><p>この利用中の入力・会話・画像を消去します。ダウンロード済みのファイルは残ります。処理中のAPIや課金は取り消せない場合があります。</p><div className="dialog-actions"><Button onClick={()=>confirmEnd.current.close()}>戻る</Button><Button variant="primary" onClick={finish}>入力を消去して終了</Button></div></dialog></div>;
+ async function run(feature,input){
+  if(life.isEnding())throw Error('利用の終了を確認するまで、新しい送信と結果の取得を停止しています。');
+  if(pending||sessionStorage.getItem('yamadaya-pending'))throw Error('前の処理結果を先に確認してください。');
+  if(sending.current)throw Error('処理が終わるまでお待ちください。');
+  if(!info)throw Error('接続状態を確認してください。');
+  if(info.spendingPaused||info.stopReason)throw Error(pauseMessage(info));
+  const ticket=life.capture(),active=()=>life.canPublish(ticket);
+  setError('');sending.current=true;setBusy(true);
+  const id=feature===info.oneTestFeature&&info.oneTestId?info.oneTestId:crypto.randomUUID();controller.current=new AbortController();
+  try{
+   sessionStorage.setItem('yamadaya-pending',id);setPending(id);
+   const r=await api.job(id,feature,input,info.csrf,controller.current.signal);
+   if(!active())throw Error('利用を終了したため、結果を表示しません。');
+   if(r.state!=='succeeded'||!r.result)throw Error(r.message||'結果を確認できません。自動で再送しません。');
+   sessionStorage.removeItem('yamadaya-pending');setPending('');void refreshInfo();return r.result;
+  }catch(e){
+   if(active()){
+    if(e.notDispatched){sessionStorage.removeItem('yamadaya-pending');setPending('');}
+    void refreshInfo();
+   }
+   throw Error(e.name==='AbortError'?'待機を終了しました。処理や課金は続く場合があります。自動で再送しません。':e.message);
+  }finally{if(active()){sending.current=false;setBusy(false);controller.current=null;}}
+ }
+ const tool=TOOLS.find(t=>t.id===route),pausedText=pauseMessage(info),operationsBlocked=endPending||loading||!info||!!info.spendingPaused||!!info.stopReason;
+ return <div className={`app-shell ${reduced?'reduce-motion':''}`}><div className="ambient ambient-one"/><div className="ambient ambient-two"/><a className="skip-link" href="#main">本文へ移動</a><aside className="sidebar glass"><button className="brand" disabled={busy||endPending} onClick={()=>setRoute('home')} aria-label="やまだやAI ホーム"><Mark/><span>やまだやAI<small>（仮）</small></span></button><nav aria-label="基本機能"><button disabled={busy} aria-label="ホーム" className={`nav-item ${route==='home'?'selected':''}`} onClick={()=>setRoute('home')} aria-current={route==='home'?'page':undefined}><Icon name="home"/><span>ホーム</span></button><span className="nav-label">基本機能</span>{TOOLS.map(t=><button key={t.id} aria-label={t.name} className={`nav-item ${route===t.id?'selected':''}`} aria-current={route===t.id?'page':undefined} disabled={busy||endPending} onClick={()=>setRoute(t.id)}><Icon name={t.icon}/><span>{t.name}</span>{route===t.id&&<span className="nav-active-dot"/>}</button>)}</nav><div className="sidebar-bottom"><div className="shared-device"><Icon name="monitor"/><span>共用PC<small>基本機能のみ</small></span><Icon name="shield" size={16}/></div><button aria-label="使い方" className="nav-item help-nav" onClick={()=>help.current.showModal()}><Icon name="help"/><span>使い方</span></button></div></aside><div className="main-column"><header className="topbar"><div className="breadcrumb"><span>やまだやAI（仮）</span>{tool&&<><Icon name="chevron" size={13}/><strong>{tool.name}</strong></>}</div><div className="top-actions"><span className={`connection-pill ${info?.mode==='live'?'live':''}`}><i/>{endPending?'終了確認待ち':loading?'接続を確認中':info?.mode==='demo'?'操作見本':info?.mode==='live'?(info.spendingPaused?'AI送信を停止中':'AI接続済み'):'接続準備中'}</span><button className="end-session" disabled={loading} onClick={()=>endPending?void finish():confirmEnd.current.showModal()}>{endPending?'終了を再確認':'利用を終了'}<Icon name="reset" size={16}/></button></div></header><main id="main" tabIndex={-1} className="main-content">{pausedText&&<div className="alert" role="status"><Icon name="help"/><span>{pausedText}</span></div>}{error&&<Alert message={error}/>}{pending&&!busy&&!endPending&&<div className="recovery-banner"><Alert message="前の処理が残っています。再送せず、結果を確認してください。"/><Button disabled={!info||loading} onClick={recoverPending}>前の処理結果を確認</Button></div>}{recovered&&<div className="surface glass recovered"><div className="section-bar"><h2>前の処理結果</h2><Button icon="close" variant="quiet" onClick={()=>setRecovered(null)}>閉じる</Button></div>{recovered.image?<ImageResult result={recovered} paper={recovered.paper} onError={setError} onToast={showToast}/>:<p className="source-text">{recovered.text||[recovered.headline,recovered.copy,recovered.direction].join('\n')}</p>}</div>}<div key={epoch}>{loading?<Skeleton/>:endPending?<div className="surface glass"><h1>利用の終了を確認してください</h1><p>この画面の入力・会話・画像は消去しました。終了を確認できるまで、新しい送信と前の結果の取得を停止しています。</p>{!endPersistent&&<p role="alert">ブラウザの保存機能を使えないため、再読み込み後に停止状態を引き継げる保証はありません。終了の確認が済むまで、この画面で再確認してください。</p>}<Button onClick={()=>void finish()}>終了を再確認</Button></div>:<><div hidden={route!=='home'}><Home navigate={setRoute}/></div>{visited.includes('chat')&&<div hidden={route!=='chat'}><Chat aiPaused={operationsBlocked} searchEnabled={info?.searchEnabled} run={run} busy={busy&&route==='chat'} cancel={()=>controller.current?.abort()} onToast={showToast}/></div>}{visited.includes('writing')&&<div hidden={route!=='writing'}><Writing aiPaused={operationsBlocked} run={run} busy={busy&&route==='writing'} cancel={()=>controller.current?.abort()} onToast={showToast}/></div>}{visited.includes('pop')&&<div hidden={route!=='pop'}><Pop aiPaused={operationsBlocked} run={run} busy={busy&&route==='pop'} cancel={()=>controller.current?.abort()} onToast={showToast}/></div>}{visited.includes('image')&&<div hidden={route!=='image'}><Images aiPaused={operationsBlocked} run={run} busy={busy&&route==='image'} cancel={()=>controller.current?.abort()} onToast={showToast}/></div>}</>}</div></main></div><nav className="mobile-nav glass" aria-label="モバイル基本機能">{[{id:'home',icon:'home',name:'ホーム'},...TOOLS].map(t=><button key={t.id} aria-current={route===t.id?'page':undefined} onClick={()=>!busy&&!endPending&&setRoute(t.id)}><Icon name={t.icon}/><span>{t.name}</span></button>)}</nav><div className={`toast ${toast?'show':''}`} role="status"><Icon name="check" size={17}/>{toast}</div><dialog ref={help} className="dialog glass"><div className="section-bar"><h2>使い方</h2><button className="icon-button" aria-label="使い方を閉じる" onClick={()=>help.current.close()}><Icon name="close"/></button></div><ol className="help-steps"><li>基本機能を選びます。</li><li>伝えたい内容を入力して作成します。</li><li>内容を確認し、コピー・保存します。</li><li>使い終わったら「利用を終了」を押します。</li></ol><p className="muted">顧客・従業員の個人情報や機密情報は入力しないでください。業務システムや社内ファイルには接続していません。</p><label className="check-row"><input type="checkbox" checked={reduced} onChange={e=>setReduced(e.target.checked)}/><span>動きを控えめにする</span></label><p className="muted tiny">15分操作がないと入力を消去します。{info?.mode==='demo'&&'現在は操作見本です。実AIへの送信・課金はありません。'}</p></dialog><dialog ref={confirmEnd} className="dialog glass"><h2>利用を終了しますか？</h2><p>この利用中の入力・会話・画像を消去します。ダウンロード済みのファイルは残ります。処理中のAPIや課金は取り消せない場合があります。</p><div className="dialog-actions"><Button onClick={()=>confirmEnd.current.close()}>戻る</Button><Button variant="primary" onClick={finish}>入力を消去して終了</Button></div></dialog></div>;
 }
 createRoot(document.getElementById('root')).render(<App/>);

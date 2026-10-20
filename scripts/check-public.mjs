@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 const root=path.resolve(import.meta.dirname,'..');
-const files=['package.json','package-lock.json','index.html','vite.config.js','.gitignore','README.md','AGENTS.md'];
-const dirs=['src','server','shared','public','tests','docs','scripts'];
+const files=['package.json','package-lock.json','index.html','vite.config.js','.gitignore','README.md','AGENTS.md',
+  'tools/device-cert/mac-identity.swift','tools/device-cert/windows-csr.ps1','tools/device-cert/README.md'];
+const dirs=['src','server','shared','public','tests','docs','scripts','hosted'];
 async function walk(dir){for(const e of await fs.readdir(path.join(root,dir),{withFileTypes:true})){const rel=`${dir}/${e.name}`;if(e.isSymbolicLink())throw Error(`Symlink cannot be public: ${rel}`);if(e.isDirectory())await walk(rel);else files.push(rel);}}
 for(const d of dirs)await walk(d);
 const patterns=[/sk-[A-Za-z0-9_-]{20,}/,/gh[pousr]_[A-Za-z0-9]{20,}/,/github_pat_[A-Za-z0-9_]{20,}/,/cfast_[A-Za-z0-9_-]{20,}/,/eyJhIjoi[A-Za-z0-9_+\/=-]{40,}/,/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/proj_[A-Za-z0-9]{20,}/,/key_[A-Za-z0-9]{12,}/];

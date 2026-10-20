@@ -1,10 +1,27 @@
 {
-  "name":"yamadaya-ai-shared-web",
-  "version":"0.1.0",
-  "private":true,
-  "type":"module",
-  "engines":{"node":">=24.16.0 <25"},
-  "scripts":{"dev":"node server/dev.mjs","build":"vite build","start":"node server/index.mjs","test":"node --test tests/*.test.mjs","check:public":"node scripts/check-public.mjs"},
-  "dependencies":{"react":"19.3.1","react-dom":"19.3.1"},
-  "devDependencies":{"vite":"8.3.4"}
+  "name": "yamadaya-ai-shared-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.16.0 <25"
+  },
+  "scripts": {
+    "dev": "node server/dev.mjs",
+    "build": "vite build",
+    "start": "node server/index.mjs",
+    "build:hosted": "node scripts/build-hosted.mjs",
+    "mock:hosted": "node hosted/local-mock.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check:public": "node scripts/check-public.mjs"
+  },
+  "dependencies": {
+    "pg": "8.23.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.10",
+    "vite": "8.3.4"
+  }
 }

@@ -9,3 +9,6 @@ dist/
 *.sqlite*
 results/
 output/
+.vercel/
+.vercel
+.env*

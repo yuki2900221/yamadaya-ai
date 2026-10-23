@@ -1,6 +1,6 @@
 # 基本4機能の実AI試用：準備と接続確認（2026-10-20）
 
-ユーザーは、このMacと会社のWindows 11／Chrome 1台で、AIチャット・POP制作・画像生成／編集・文章作成を実際に使える状態へ進めることを承認した。2台限定、従業員ログイン不要、合計10 USD以内、追加契約・増額なしを維持する。**Macではチャット・文章・POP生成とPDF保存・一般画像生成まで成功。画像編集の結果取得で認証エラーが発生し、接続安定性とWindowsを含む基本4機能の受入は未完了。**
+ユーザーは、このMacと会社のWindows 11／Chrome 1台で、AIチャット・POP制作・画像生成／編集・文章作成を実際に使える状態へ進めることを承認した。2台限定、従業員ログイン不要、合計10 USD以内、追加契約・増額なしを維持する。**Windowsの専用Chrome窓で、チャット応答・文章作成・POPのPDF保存・一般画像保存の成功を本人が確認した。通常Chrome、開き直し・OS再起動、実2台の隔離／停止、Macの接続安定性は未完了。Macの画像編集は結果取得時の認証失敗が残る。**
 
 入口は既存の `https://ai-mock.superyamadaya.com/`、配備先は既存Vercel project `yamadaya-ai-trial`。先行するモック配備の結果は[修正版反映報告](mock-release-20261020.md)を参照し、その合格を今回の実AI試験へ流用しない。
 
@@ -10,8 +10,8 @@
 
 | 対象 | 本書更新時点の確認結果 | 残る作業 |
 |---|---|---|
-| 端末証明書 | MacとWindowsの証明書2件をCloudflareでActiveと確認。公開CSRとの鍵一致・clientAuth・CA:falseを検査 | Windowsでは公開CERのDownloads保存を案内して返答待ち。証明書取込・Chrome設定・実接続は未実施 |
-| 2台の入口 | WAFを、検証成功・未失効の証明書かつ正規2指紋の一方だけが通る条件へ反映。Workerの `HOSTED_APPROVED_DEVICES` も2台に更新。Workerコードbundleは不変 | Macは当初ログインなしで接続・実AI操作に成功したが、画像編集時と新規タブで再び遮断。Windowsと実2台間隔離は未試験 |
+| 端末証明書 | MacとWindowsの証明書2件をCloudflareでActiveと確認。公開CSRとの鍵一致・clientAuth・CA:falseを検査 | WindowsはPKCS1署名・検証成功、PSS署名失敗。自動選択は権限エラーで未適用。通常／シークレットは遮断、専用Chrome窓のホーム成功を本人が報告。無操作利用・基本4機能は未合格 |
+| 2台の入口 | WAFを、検証成功・未失効の証明書かつ正規2指紋の一方だけが通る条件へ反映。Workerの `HOSTED_APPROVED_DEVICES` も2台に更新。Workerコードbundleは不変 | Macは当初接続後に再び遮断。Windowsの専用Chrome窓はホーム成功の本人報告あり。通常Chromeの安定接続・実2台間隔離は未確認 |
 | 専用DB | `yamadaya_trial`、最小権限live login、private画像bucketを準備。端末2件・元期限を確認し、22ジョブを一度だけimport。追加6ジョブ後も元unknown3件を保持 | 実API請求との照合は未完了。既存 `yamadaya_mock` や業務DBを実台帳で上書きしない |
 | 旧ローカル | 旧実行プロセスを停止し、22ジョブのmetadataをexport。永続cutover markerを保持 | 配備を戻す場合も旧実行元を自動再開せず、費用台帳を二重に動かさない |
 | 実AI用コード | Vercel Productionのサーバー専用Secretを3件更新・5件追加。247ファイルのprebuilt配備がREADY、固定aliasへのpromoteを確認 | 新版の実機受入を継続。ソース同梱と実際の機能成功を区別する |
@@ -63,7 +63,94 @@ POPの保存PDFは **999,518 bytes、1ページ、209.9999998 × 296.9999987 mm*
 
 CloudflareのSecurity Analyticsでは、15:36:26 JSTの正規Macの `/api/session` が `Block by Custom rules`、通信方式 `HTTP/3` と確認できた。どの証明書属性で拒否されたかはこの表示だけでは分からない。HTTP/3とmTLSの組合せを次の非課金診断対象とし、zone全体のTLS/HTTP/3設定は変更していない。単発HTTP/1.1診断helperはローカルでコンパイルできたが、証明書照会段階で停止し、HTTP要求は送っていない。したがって通信方式による差の実証には数えない。Cloudflare公式の[プロトコル診断](https://developers.cloudflare.com/speed/optimization/protocol/troubleshooting/protocol-troubleshooting/)にあるHTTP/1.1との比較を候補とするが、今回の根本原因を同資料だけで断定しない。
 
-画像編集時の401／403を受け、画面は `closeLocally` により入力・結果を消去した。利用終了の再確認も失敗し、別の新規ブラウザタブでの `/api/session` GETでもCloudflareの「Sorry, you have been blocked」を確認した。WAFを弱めず、生成の再送もせずに停止している。**認証の不安定さの原因は未確定で、修正済み・Macの安定接続合格とは扱わない。** Windowsは公開証明書の受渡し待ちで、取込・Chrome設定・接続確認が残る。
+画像編集時の401／403を受け、画面は `closeLocally` により入力・結果を消去した。利用終了の再確認も失敗し、別の新規ブラウザタブでの `/api/session` GETでもCloudflareの「Sorry, you have been blocked」を確認した。WAFを弱めず、生成の再送もせずに停止している。**認証の不安定さの原因は未確定で、修正済み・Macの安定接続合格とは扱わない。** Windows本人は公開証明書の転送とCurrentUser Myへの追加成功を申告した。先行するcertreq -acceptは信頼チェーンの構築エラーで停止し、Myへの追加直後には発行元の検証警告と秘密キー対応表示の欠落があった。公開CERの元CSRとの鍵一致・用途・指紋をMacで再照合し、対象1枚のSHA-1識別子とMicrosoft Platform Crypto Providerを指定したrepairstoreを案内した。その後、本人が対象証明書の「この証明書に対応する秘密キーを持っています」表示を確認した（修復コマンドの終了コードやTPM署名の実測は未取得）。Root/CAの追加・鍵再生成・信頼検証の無効化は行っていない。Chromeの既存ポリシー確認・自動選択設定と実接続が残り、鍵対応表示だけでChrome接続や2台受入を合格にしない。
+
+### Windowsの通常Chromeと非課金の切り分け（後続）
+
+本人は `chrome://policy` の未設定ポリシー表示を有効にしたときだけ対象項目が出ると報告した。既存設定を上書きしないHKCU用コマンドを案内したが、`New-Item` による `HKEY_CURRENT_USER\Software\Policies` 作成時に `PermissionDenied` で停止した。自動選択設定の反映済みとは扱わない。管理者での再実行、レジストリACL変更、Root/CA追加は案内・実行していない。
+
+同じ共用WindowsユーザーのChromeで試用URLを開いたところ、本人は証明書選択画面が出ず「Sorry, you have been blocked」となったと報告した。Ray IDは非公開の診断記録だけへ保存した。証明書未提示・検証失敗・指紋不一致・別ルールによる遮断は、この画面だけでは区別できない。今回の管理画面照合はブラウザ操作の接続がタイムアウトし、未実施。
+
+Macから専用ホストだけへ、証明書・秘密鍵を送らないTLS 1.2／1.3のハンドシェイクを各2回比較した（HTTP要求0、AI実行0）。両方式で `CertificateRequest` とサーバー証明書の検証成功を確認し、TLS 1.2で要求されるCA名はWindows葉証明書の発行元と一致した。TLS 1.3ではs_clientのCA名表示が空でも、メッセージ記録には `CertificateRequest` が存在するため、証明書要求なしとは判断しない。Macからの公開TLS条件の確認であり、会社PCの証明書提示・TPM署名成功を実証したものではない。HTTP/3原因説も未確定のまま維持する。
+
+後続で本人はシークレットウインドウでも同じブロック画面になると報告した。シークレットで証明書選択が出たかは未確認。通常／シークレットの両方で接続未合格として保持する。
+
+Windows標準curlでCurrentUser Myの当該証明書を明示し、HTTP/1.1・TLS 1.2でホームへのGETを1回だけ試す手順を案内した。本人の結果はcurl 35、Schannelの `next InitializeSecurityContext` による `SEC_E_INTERNAL_ERROR (0x80090304)`、`HTTP 000` であり、HTTP応答を受け取る前に失敗した。受領した操作履歴にはURL引数へのMarkdownリンク表記の混入もあり、意図したURLへの正規接続の実証に数えない。URL混入だけでこのTLSエラーの原因を確定せず、PowerShell変数でURIを組み立てる再確認後も、本人は同じcurl 35／0x80090304／HTTP 000を報告した。受領した変数代入行にもMarkdownリンク表記があり、実入力の完全性は未確認。ネット接続の再試行はいったん止め、対象1枚の既存秘密鍵による固定ダミー文字列の署名と公開鍵検証（SHA256・PKCS1／PSS各1回）を、ネット・書出し・鍵作成・属性変更なしで行う診断手順を準備した（後続の実測は次項）。[MicrosoftのSchannel仕様](https://learn.microsoft.com/en-us/windows/win32/secauthn/initializesecuritycontext--schannel)でも当該コードは一般的な内部エラーであり、TPM故障やCA不足へ原因を限定しない。
+
+端末の証明書検証を維持し、設定ファイル読み込み・自動再送・リダイレクト追跡は使わず、本文とcookieをファイルへ保存しない。WAF・端末許可・TLSの永続設定・元期限・予算予約は変更していない。今回の診断によるAI実行は0。
+
+### Windowsの既存鍵によるローカル署名診断（本人の実測）
+
+対象証明書1枚をCurrentUser Myから開き、固定ダミー文字列をSHA256で署名して、同じ証明書の公開鍵で検証する手順を本人が実行した。ネット・秘密鍵の書出し・新規鍵作成・権限やCA変更は含めていない。
+
+| 段階 | 本人が報告した結果 |
+|---|---|
+| 公開鍵を開く | `PublicKeyOpen=OK` |
+| 秘密鍵を開く | `PrivateKeyOpen=OK` |
+| PKCS1署名・公開鍵検証 | `Pkcs1 Sign=OK Verify=True` |
+| PSS署名 | `Stage=Sign:Pss SchemeErrorHResult=0x80070423`、検証には未到達 |
+
+鍵対応は表示だけでなく、PKCS1署名と検証の成功まで確認できた。一方、このWindows環境でSHA256 PSS署名が失敗する互換性問題が残る。Windowsから正常にmTLS接続できたとは扱わない。
+
+[Microsoft公式SDKのwinerror.h](https://raw.githubusercontent.com/microsoft/win32metadata/main/generation/WinSDK/RecompiledIdlHeaders/shared/winerror.h)にはPSSの要求salt長不一致を示す `TPM_E_PCP_UNSUPPORTED_PSS_SALT = 0x40290423` がある。[.NET Frameworkの例外変換実装](https://raw.githubusercontent.com/microsoft/referencesource/main/mscorlib/system/security/cryptography/crypto.cs)では、この正値は下位16ビットを使って今回と同じ `0x80070423` になる。[NCrypt署名の例外化](https://raw.githubusercontent.com/microsoft/referencesource/main/System.Core/System/Security/Cryptography/NCryptNative.cs)もこのconstructorを使用する。したがってPSS salt長の互換性は有力候補だが、生のNCrypt戻り値は未取得であり、番号だけで原因を確定しない。サービスの循環依存やTPM故障とも即断しない。
+
+[ChromiumのWindows鍵実装](https://chromium.googlesource.com/chromium/src/+/HEAD/net/ssl/ssl_platform_key_win.cc)にもTPMごとのPSS salt長互換性が記載されている。ただし証明書選択画面が出ないこととの因果は未確認。Macから追加の非課金TLS 1.2ハンドシェイクを読み取り、CertificateRequestの長さと署名方式ベクトルを検査したところ、`rsa_pss_rsae_sha256` と `rsa_pkcs1_sha256` の両方を含んでいた。「CloudflareがPSSしか許可していない」という説明はこの実測に合わない。これはMac側からの要求条件であり、Windowsの実接続で何が選択されたかまでは確認していない。
+
+本人が `tpm.msc` でTPM 2.0と製造元・firmwareバージョンを読み取った。詳細は非公開診断記録へ保存し、末尾の文字を推測して版番号を確定しない。対象PC向けの公式更新手順・修正版は未確認で、TPMのクリア・firmware更新・サービス変更・OS全体の暗号設定変更・証明書ローテーションは行っていない。
+
+次は既存TPM RSA鍵と証明書を維持し、専用ChromeプロセスでTLS 1.2接続を1回比較する手順を準備した（本人の実行待ち）。通常Chromeとは別の、既存なら停止する名前付きTemp user-data-dirを使うため、新しい診断用プロファイルのファイルは作成される。通常プロファイルや既存ポリシーは書き換えず、専用プロセスだけにTLS 1.2 min/maxとdisable-quicを指定する。対象ホストは固定、証明書検証は有効のまま。起動引数の指定とuser-data-dirによる分離は[Chrome公式の開発用手順](https://developer.chrome.com/docs/web-platform/chrome-flags)に沿うが、実際のプロトコル・証明書提示・ホーム表示はこれからの実測であり、通常Chromeの恒久対応とも扱わない。ECDSAへの変更は未実施で、Cloudflare managed CAのCSR受理と実機対応の確認前に採用しない。今回の診断による追加AI実行・予算増額は0。
+
+### Windows専用Chrome窓でのホーム成功（本人の報告）
+
+上記の専用Tempプロファイルと起動引数を案内した後、本人が「ホームひらけた」と報告した。既存証明書・鍵のまま、診断用のChrome窓で試用ホームを開けたという実機の本人確認として記録する。CloudflareのWAF・Worker・DB許可・元期限はこの比較で変更していない。
+
+証明書選択の有無、chrome://version上の引数、実際のTLS版・署名方式はまだ取得していない。起動指示からTLS 1.2／PKCS1の実使用を自動的に確定せず、PSSだけが全遮断の原因だったとも断定しない。通常Chromeの解決、再起動後の無操作利用、Windowsの基本4機能、Macの安定接続は引き続き未合格。
+
+その後、本人が同じ専用窓の検索なし短文チャットで返事を受け取ったと報告した。Windowsでの実AIチャット応答の本人確認として記録する。返答内容の品質・コピー一致・個別ジョブとの対応までは独立検証していない。次は同じ窓で文章作成とコピー、別のダミー商品のA4縦POPとPDF保存、一般画像生成と保存を順番に試す段階であり、残り3機能はまだ合格にしない。
+
+### Windowsチャット後の費用集計（2026-10-20 19:07 JST）
+
+既存の最小権限runtime loginで、専用trialのusage集計だけを照会した。関数には予算行の `SELECT FOR UPDATE` があるため、厳密なREAD ONLY transactionとは呼ばない。短いtransactionをrollbackしてロックを解放し、reserve／finish／purge／importなど状態を変更するactionは呼んでいない。DB接続はCA・ホスト検証を維持し、キーや資格情報の値は表示していない。この照会自体によるAI実行は0。
+
+| 項目 | 照会結果 |
+|---|---:|
+| 合計上限 | 10.000000 USD |
+| ジョブ集計件数 | 29件（先行28件から1件増） |
+| usage計算額 | 0.141905 USD（先行集計から0.000025 USD増） |
+| 保守的な予約計 | 3.255000 USD |
+| 保守的な残り枠 | 6.745000 USD |
+| 送信中・未確定の集計値 | `uncertain=3` |
+| 移行／停止状態 | `imported=true`／`paused=false` |
+| 元の期限との一致 | `expires=1792972074000`、一致 |
+
+usageの集計は個別ジョブ・端末・unknown hold合計を返さない。そのため今回の照会だけでWindowsの当該ジョブを特定したり、元unknown集合／0.45 USDの個別行を再照合したとは扱わない。元の保留と新unknown時の停止条件を維持し、集計額も実請求の確定額とは区別する。
+
+### Windowsの基本4機能・保存の本人確認と最新集計
+
+本人が文章作成・POPのPDF保存・一般画像の保存に成功したと報告した。先行するチャット応答と合わせ、専用Chrome窓での基本4機能の初回体験を本人確認済みとする。文章コピーの完全一致、PDFの寸法／内容、画像の品質、画像編集、実印刷は今回の報告だけで合格にしない。生成物や業務情報を取得・公開しておらず、個別ジョブとの独立した照合も未実施。
+
+2026-10-20 **19:15 JST**、上と同じ最小権限usage集計（予算行lockあり、transactionはrollback）を再照会した。
+
+| 項目 | 最新の照会結果 |
+|---|---:|
+| 合計上限 | 10.000000 USD |
+| ジョブ集計件数 | 33件（直前29件から4件増） |
+| usage計算額 | 0.171573 USD（直前から0.029668 USD増、請求未照合） |
+| 保守的な予約計 | 3.985000 USD |
+| 保守的な残り枠 | 6.015000 USD |
+| 送信中・未確定の集計値 | `uncertain=3`、直前から増加なし |
+| 移行／停止状態 | `imported=true`／`paused=false` |
+| 元の期限との一致 | `expires=1792972074000`、一致 |
+
+元unknown3件／0.45 USDを解放・書換える操作は行っていない。今回もusageだけでは個別のunknown集合／hold額を直接再照合していない。上限・元期限を変更せず、照会による追加AI実行も0。
+
+デスクトップに専用の「やまだやAI（試用）」ショートカットを1件だけ作り、既存と同じChrome・Tempプロファイル・起動引数を保存後に読み戻す手順を案内した。既存の同名ショートカットは上書きせず、元プロファイルが無ければ停止する構成。本人はその後、ショートカットからホームを開けたと報告した。新しい資格情報・クラウド設定・追加AI処理はこの手順に含まない。
+
+これは専用ショートカットからのホーム再表示の本人確認であり、証明書選択の有無、全Chromeプロセスの終了、OS再起動、実際のTLS版は未確認。通常Chromeのブックマークだけでの利用、恒久的な保管先・PSS互換性の解決とも区別する。
+
+その後、本人が文章作成へ固定ダミー文字列を未送信で入力し、「利用終了」後に専用ショートカットから戻った際、ホームが表示され、入力も消えていたと報告した。Windows実機の本人確認として、この未送信入力の消去は成功。追加AI実行は不要な手順で、今回こちらからのAI呼び出し・クラウド設定変更・費用台帳の再照会は行っていない。生成結果やサーバー保存内容の消去は、この未送信テストでは証明していない。ダウンロード済みのPDF／画像は利用終了の対象外で、端末に残る。
+
+次は追加の設定を前提にせず、既存の専用ショートカットから、架空の商品・公開可能な情報で基本4機能の使い勝手を試す。最初はPOPを1件、入力→提案確認→生成→PDF保存まで通し、必要に応じて印刷の見え方を評価する。文字・価格・商品写真の正確さは利用者が確認し、待ち時間、操作で迷った箇所、直したい点を残す。印刷や画像編集の合格を先取りしない。当面の体験評価はWeb検索を使わず進める。2台限定・従業員ログイン不要・累計10 USD以内・元の未確定0.45 USDの保留・元期限2026-10-26 08:47:54 JST・新しい未確定で停止／元処理を再送しない条件は維持する。上表の残り6.015 USDは19:15 JSTの集計時点の保守枠で、現在残高や実請求額とは扱わない。
 
 ## 配備と認証の実確認
 

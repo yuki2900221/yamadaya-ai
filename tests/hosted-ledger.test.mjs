@@ -80,7 +80,7 @@ test('unimported database refuses budget use; importing conserves 17 metadata jo
   await rejectsCode(ledger.reserve(request()), 'NOT_IMPORTED');
   assert.equal((await ledger.usage()).imported, false);
   await imported();
-  assert.deepEqual(await ledger.usage(), { limit: 10000000, reserved: 2035000, calculated: 1400,
+  assert.deepEqual(await ledger.usage(), { limit: 10000000, reserved: 451400, calculated: 1400,
     count: 17, uncertain: 3, imported: true, paused: false, expires: (await db.query('SELECT approved_until FROM yamadaya_trial.budget')).rows[0].approved_until * 1 });
   await assert.rejects(imported(), /Import already completed/);
 });
@@ -113,7 +113,7 @@ test('two adapter instances cannot execute the same operation twice', async () =
   assert.deepEqual(results.map(r => r.duplicate).sort(), [false, true]);
   assert.equal(results.filter(r => r.executorToken).length, 1);
   assert.equal((await ledger.usage()).count, 18);
-  assert.equal((await ledger.usage()).reserved, 2050000);
+  assert.equal((await ledger.usage()).reserved, 466400);
   const record = await ledger.get(job.id, owner);
   assert.equal('executor_hash' in record, false);
   assert.equal('executorToken' in record, false);
@@ -130,7 +130,7 @@ test('same id with altered hash or another owner cannot be acquired', async () =
 test('old unknown payload hashes cannot be resent even with a new id/session', async () => {
   await imported(); await session();
   for (let i = 0; i < 3; i++) await rejectsCode(ledger.reserve(request({ requestHash: sha(`uncertain-request-${i}`) })), 'UNCERTAIN_DUPLICATE');
-  assert.equal((await ledger.usage()).reserved, 2035000);
+  assert.equal((await ledger.usage()).reserved, 451400);
 });
 
 test('existing unknown id/hold snapshot must remain an exact set', async () => {
@@ -149,12 +149,22 @@ test('global active-job limit applies across instances', async () => {
   assert.equal(outcomes.find(x => x.status === 'rejected').reason.code, 'BUSY');
 });
 
-test('the global USD 10 limit includes all historical success and unknown reservations', async () => {
+test('import validates historical holds but runtime settles imported successes to known costs', async () => {
   await imported({ reserved: 9800000 }); await session();
-  await rejectsCode(ledger.reserve(request({ feature: 'image' })), 'BUDGET_LIMIT');
-  assert.equal((await ledger.usage()).reserved, 9800000);
+  assert.equal((await ledger.usage()).reserved, 451400);
   await success(request());
-  assert.equal((await ledger.usage()).reserved, 9815000);
+  assert.equal((await ledger.usage()).reserved, 451410);
+});
+
+test('settled costs and all unknown holds still enforce the global USD 10 limit', async () => {
+  await imported({ reserved: 9800000 }); await session();
+  // Adjust invented completed costs within each original hold so actual costs
+  // plus the three unchanged unknown holds are exactly USD 9.8.
+  await db.exec("UPDATE yamadaya_trial.jobs SET cost=hold WHERE state='succeeded';");
+  assert.equal((await ledger.usage()).reserved, 9800000);
+  await rejectsCode(ledger.reserve(request({ feature: 'image' })), 'BUDGET_LIMIT');
+  await success(request());
+  assert.equal((await ledger.usage()).reserved, 9800010);
 });
 
 test('successful completion requires matching executor capability and owner', async () => {
@@ -168,12 +178,67 @@ test('successful completion requires matching executor capability and owner', as
   assert.equal((await ledger.usage()).paused, false);
 });
 
+test('success releases only unused hold across adapters; a repeated finish cannot release twice', async () => {
+  await imported(); await session();
+  const other = new HostedLedger(db), before = await ledger.usage();
+  const budgetBefore = (await db.query('SELECT * FROM yamadaya_trial.budget')).rows;
+  const unknownBefore = (await db.query("SELECT * FROM yamadaya_trial.jobs WHERE baseline_unknown ORDER BY id")).rows;
+  const job = request({ feature: 'image' }), r = await ledger.reserve(job);
+  assert.equal((await other.usage()).reserved, before.reserved + 350000);
+  await ledger.finish({ id: job.id, owner, executorToken: r.executorToken, state: 'succeeded', costMicros: 20000 });
+  const settled = await other.usage();
+  assert.equal(settled.reserved, before.reserved + 20000);
+  assert.equal(settled.calculated, before.calculated + 20000);
+  assert.equal((await ledger.get(job.id, owner)).hold, 350000, 'original reservation remains auditable');
+  await rejectsCode(other.finish({ id: job.id, owner, executorToken: r.executorToken, state: 'succeeded', costMicros: 0 }), 'ALREADY_FINISHED');
+  assert.deepEqual(await ledger.usage(), settled);
+  assert.deepEqual((await db.query('SELECT * FROM yamadaya_trial.budget')).rows, budgetBefore);
+  assert.deepEqual((await db.query("SELECT * FROM yamadaya_trial.jobs WHERE baseline_unknown ORDER BY id")).rows, unknownBefore);
+});
+
+test('released success capacity is shared but simultaneous new operations still dispatch only once', async () => {
+  await imported({ reserved: 10000000 }); await session();
+  await db.exec("UPDATE yamadaya_trial.jobs SET cost=hold WHERE state='succeeded'; UPDATE yamadaya_trial.jobs SET cost=cost-15000 WHERE id='fixture-done-0';");
+  assert.equal((await ledger.usage()).reserved, 9985000);
+  const other = new HostedLedger(db), first = request(), second = request();
+  const results = await Promise.allSettled([ledger.reserve(first), other.reserve(second)]);
+  assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+  assert.equal(results.find(r => r.status === 'rejected').reason.code, 'BUSY');
+  const index = results.findIndex(r => r.status === 'fulfilled'), granted = results[index].value;
+  const grantedJob = index ? second : first;
+  await ledger.finish({ id: grantedJob.id, owner, executorToken: granted.executorToken, state: 'succeeded', costMicros: 0 });
+  assert.equal((await other.usage()).reserved, 9985000);
+  const third = request(), reservation = await other.reserve(third);
+  assert.equal((await ledger.usage()).reserved, 10000000);
+  await other.finish({ id: third.id, owner, executorToken: reservation.executorToken, state: 'succeeded', costMicros: 15000 });
+  await rejectsCode(ledger.reserve(request()), 'BUDGET_LIMIT');
+});
+
+test('unknown completion retains its full hold even when a smaller calculated cost is available', async () => {
+  await imported(); await session();
+  const before = await ledger.usage(), job = request(), r = await ledger.reserve(job);
+  await ledger.finish({ id: job.id, owner, executorToken: r.executorToken, state: 'unknown', costMicros: 10 });
+  const value = await ledger.usage();
+  assert.equal(value.reserved, before.reserved + 15000);
+  assert.equal(value.calculated, before.calculated + 10);
+  assert.equal(value.paused, true);
+});
+
+test('a completion without calculated cost remains unknown and does not release the hold', async () => {
+  await imported(); await session();
+  const before = await ledger.usage(), job = request(), r = await ledger.reserve(job);
+  const result = await ledger.finish({ id: job.id, owner, executorToken: r.executorToken, state: 'succeeded' });
+  assert.equal(result.state, 'unknown'); assert.equal(result.cost, null);
+  assert.equal((await ledger.usage()).reserved, before.reserved + 15000);
+  assert.equal((await ledger.usage()).paused, true);
+});
+
 test('new unknown keeps its hold and stops subsequent new operations', async () => {
   await imported(); await session();
   const job = request({ feature: 'image' }), r = await ledger.reserve(job);
   await ledger.finish({ id: job.id, owner, executorToken: r.executorToken, state: 'unknown' });
   const u = await ledger.usage();
-  assert.equal(u.reserved, 2385000); assert.equal(u.uncertain, 4); assert.equal(u.paused, true);
+  assert.equal(u.reserved, 801400); assert.equal(u.uncertain, 4); assert.equal(u.paused, true);
   assert.equal((await ledger.get(job.id, owner)).cost, null);
   await rejectsCode(ledger.reserve(request()), 'UNCERTAIN');
   assert.equal((await ledger.reserve(job)).duplicate, true);
@@ -184,7 +249,7 @@ test('absent or over-reservation cost becomes unknown instead of a false success
   const job = request(), r = await ledger.reserve(job);
   const result = await ledger.finish({ id: job.id, owner, executorToken: r.executorToken, state: 'succeeded', costMicros: 15001 });
   assert.equal(result.state, 'unknown'); assert.equal(result.cost, 15001);
-  assert.equal((await ledger.usage()).reserved, 2050001);
+  assert.equal((await ledger.usage()).reserved, 466401);
   await rejectsCode(ledger.reserve(request()), 'UNCERTAIN');
 });
 
@@ -213,7 +278,7 @@ test('a new reserve sweeps abandoned leases before deciding whether dispatch is 
   await db.query('UPDATE yamadaya_trial.jobs SET lease_expires=$1 WHERE id=$2', [Date.now() - 1, job.id]);
   await rejectsCode(ledger.reserve(request()), 'UNCERTAIN');
   assert.equal((await ledger.get(job.id, owner)).state, 'unknown');
-  assert.equal((await ledger.usage()).reserved, 2050000);
+  assert.equal((await ledger.usage()).reserved, 466400);
 });
 
 test('session reads and reservation are bound to the approved device', async () => {
@@ -356,7 +421,7 @@ test('runtime role can use only the bounded function surface, not alter budgets/
   await imported(); await session();
   await db.exec('SET ROLE yamadaya_trial_runtime');
   try {
-    assert.equal((await ledger.usage()).reserved, 2035000);
+    assert.equal((await ledger.usage()).reserved, 451400);
     const r = await ledger.reserve(request()); assert.equal(r.duplicate, false);
     for (const sql of ["UPDATE yamadaya_trial.budget SET limit_micros=100000000", 'SELECT * FROM yamadaya_trial.sessions',
       "UPDATE yamadaya_trial.devices SET status='active'", "SELECT yamadaya_trial.import_snapshot('{}')"]) {

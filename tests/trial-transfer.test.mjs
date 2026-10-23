@@ -64,7 +64,10 @@ test('freeze is atomic, does not rewrite historical metadata, and stops every lo
   assert.deepEqual(freezeLocalTrial(ledger.db, { now }), snapshot);
   assert.deepEqual(verifyFrozenLocalTrial(ledger.db, snapshot, { now }), snapshot);
   assert.throws(() => ledger.reserve(randomUUID(), sha('new'), 'chat', false, sha('new')), e => e.code === 'TRIAL_MOVED');
-  assert.equal(ledger.usage().reserved, 465000);
+  assert.equal(ledger.usage().reserved, 450100);
+  assert.equal(snapshot.expected.reserved, 465000); // Frozen v1 verification retains its historical accounting formula.
+  assert.throws(() => ledger.finish('dummy-success', 'succeeded', 0), e => e.code === 'TRIAL_MOVED');
+  assert.deepEqual(ledger.db.prepare('SELECT * FROM jobs ORDER BY id').all(), before);
 });
 
 test('sending jobs refuse transfer and leave marker and history unchanged', t => {

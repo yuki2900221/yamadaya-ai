@@ -30,7 +30,7 @@ test('multiple unknown holds require an explicit exact acknowledgement before di
  db.finish(id,'succeeded',.0001);
  assert.equal(db.acknowledged(ack),true);
  assert.deepEqual([db.get(image,'previous'),db.get(search,'previous')],before);
- assert.equal(db.usage().reserved,415000);
+ assert.equal(db.usage().reserved,400100);
  assert.equal(db.usage().uncertain,2);
 });
 
@@ -61,7 +61,7 @@ test('multiple acknowledgement requires a finite future expiry and rejects ambig
 
 test('acknowledgement cannot include a sending or already resolved source',t=>{
  const {db,search,ack}=fixture(t);
- db.finish(search,'sending',null);assert.equal(db.acknowledged(ack),false);
+ db.db.prepare("UPDATE jobs SET state='sending' WHERE id=?").run(search);assert.equal(db.acknowledged(ack),false);
  assert.throws(()=>db.reserve(randomUUID(),'next','chat',false,'distinct',null,ack),e=>e.code==='UNCERTAIN');
  db.finish(search,'succeeded',.001);assert.equal(db.acknowledged(ack),false);
 });
@@ -76,15 +76,16 @@ test('a third unknown immediately invalidates an acknowledgement without changin
  assert.equal(db.usage().uncertain,3);assert.equal(db.usage().reserved,415000);
 });
 
-test('multiple acknowledgement preserves the conservative budget and expires without releasing holds',t=>{
+test('multiple acknowledgement retains unknown holds while releasing known success and enforcing the cap',t=>{
  const {db,image,search,ack,setNow}=fixture(t,.42);
  const id=randomUUID();db.reserve(id,'next','chat',false,'distinct',null,ack);db.finish(id,'succeeded',.0001);
+ const second=randomUUID();db.reserve(second,'next','chat',false,'second',null,ack);db.finish(second,'succeeded',.015);
  assert.throws(()=>db.reserve(randomUUID(),'next','chat',false,'over-budget',null,ack),e=>e.code==='BUDGET_LIMIT');
  setNow(2000);assert.equal(db.acknowledged(ack),false);
  assert.throws(()=>db.reserve(randomUUID(),'next','chat',false,'expired',null,ack),e=>e.code==='UNCERTAIN');
  assert.equal(db.get(image,'previous').hold,350000);assert.equal(db.get(search,'previous').hold,50000);
  assert.equal(db.get(image,'previous').state,'unknown');assert.equal(db.get(search,'previous').state,'unknown');
- assert.equal(db.usage().reserved,415000);
+ assert.equal(db.usage().reserved,415100);
 });
 
 test('legacy single-image acknowledgement remains compatible and cannot cover an extra unknown',t=>{

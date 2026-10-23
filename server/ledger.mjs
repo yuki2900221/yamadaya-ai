@@ -14,7 +14,7 @@ export class Ledger {
   this.db.prepare("UPDATE jobs SET state='unknown' WHERE state='sending'").run();
   if(file!==':memory:')chmodSync(file,0o600);
  }
- usage(){const r=this.db.prepare("SELECT COALESCE(SUM(CASE WHEN cost IS NULL THEN hold ELSE MAX(cost,hold) END),0) AS reserved,COALESCE(SUM(cost),0) AS calculated,COUNT(*) AS count,SUM(CASE WHEN state IN ('sending','unknown') THEN 1 ELSE 0 END) AS uncertain FROM jobs").get();return {...r,limit:this.limit};}
+ usage(){const r=this.db.prepare("SELECT COALESCE(SUM(CASE WHEN state='succeeded' AND typeof(cost)='integer' AND cost>=0 AND cost<=hold THEN cost WHEN cost IS NULL THEN hold ELSE MAX(cost,hold) END),0) AS reserved,COALESCE(SUM(cost),0) AS calculated,COUNT(*) AS count,SUM(CASE WHEN state IN ('sending','unknown') THEN 1 ELSE 0 END) AS uncertain FROM jobs").get();return {...r,limit:this.limit};}
  acknowledged(ack){
   if(!ack||typeof ack!=='object'||Array.isArray(ack)||!Number.isFinite(ack.expires)||ack.expires<=this.now())return false;
   let sources;
@@ -51,7 +51,26 @@ export class Ledger {
    const record=this.db.prepare('SELECT * FROM jobs WHERE id=?').get(id);this.db.exec('COMMIT');return {record,duplicate:false};
   }catch(e){this.db.exec('ROLLBACK');throw e;}
  }
- finish(id,state,cost){this.db.prepare('UPDATE jobs SET state=?,cost=?,finished=? WHERE id=?').run(state,cost==null?null:Math.ceil(cost*1e6),this.now(),id);}
+ finish(id,state,cost){
+  if(!['succeeded','unknown'].includes(state))throw error(400,'操作を確認してください。','INVALID_REQUEST');
+  this.db.exec('BEGIN IMMEDIATE');
+  try{
+   // Cutover metadata and terminal records are immutable. A delayed or repeated
+   // completion must not release an uncertain hold or settle the same job twice.
+   if(this.db.prepare('SELECT id FROM trial_cutover WHERE id=1').get())throw error(409,'試用は専用Webアプリへ移行済みです。このPCの旧アプリからは送信できません。','TRIAL_MOVED');
+   const job=this.db.prepare('SELECT * FROM jobs WHERE id=?').get(id);
+   if(!job)throw error(404,'この操作は見つかりません。','NOT_FOUND');
+   if(job.state!=='sending')throw error(409,'この処理は既に完了しています。','ALREADY_FINISHED');
+   const micros=typeof cost==='number'&&Number.isFinite(cost)&&cost>=0?Math.ceil(cost*1e6):null;
+   const measured=Number.isSafeInteger(micros)?micros:null;
+   // A complete, bounded measurement settles the reservation. Missing, invalid
+   // or oversized success accounting remains unknown and keeps its full hold.
+   const nextState=state==='succeeded'&&measured!==null&&measured<=job.hold?'succeeded':'unknown';
+   this.db.prepare('UPDATE jobs SET state=?,cost=?,finished=? WHERE id=?').run(nextState,measured,this.now(),id);
+   const record=this.db.prepare('SELECT * FROM jobs WHERE id=?').get(id);
+   this.db.exec('COMMIT');return record;
+  }catch(e){this.db.exec('ROLLBACK');throw e;}
+ }
  get(id,owner){return this.db.prepare('SELECT * FROM jobs WHERE id=? AND owner=?').get(id,owner);}
  close(){this.db.close();}
 }

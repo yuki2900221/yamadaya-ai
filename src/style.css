@@ -6,5 +6,6 @@
 
 /* Keep operational text readable on the pale glass surfaces. */
 .muted,.input-note,.nav-item,.help-steps{color:#5e7063}.tiny,.input-note{font-size:12px}.field-label{color:#455d4b}.nav-label,.shared-device small{color:#667a68}.mobile-nav button{color:#60765d}
+.pop-proposal-layout .field>small{line-height:1.8;color:#5e7063}.pop-proposal-layout .field-label{display:block}.pop-design-group{margin-top:26px;padding-top:24px;border-top:1px solid #dfe7d9}.pop-design-notes textarea{min-height:120px}.pop-design-notes .character-count{text-align:right;font-variant-numeric:tabular-nums}.pop-text-summary{margin:24px 0}.pop-text-summary dl{margin:0 0 16px;display:grid;gap:16px}.pop-text-summary dl>div{display:grid;gap:5px}.pop-text-summary dt{font-size:11px;color:#667a68}.pop-text-summary dd{margin:0;font-size:13px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}.pop-proposal-layout .source-panel{align-self:start}.pop-proposal-layout select{max-width:100%;text-overflow:ellipsis}
 
 a.button{text-decoration:none}

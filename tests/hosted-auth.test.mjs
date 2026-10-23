@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGateway } from '../hosted/gateway.mjs';
 import { createOriginVerifier, PROOF_HEADER, TARGET_HEADER } from '../hosted/origin-auth.mjs';
+import { createWorkerBundle } from '../scripts/build-cloudflare-worker.mjs';
 
 // Every test creates fresh in-memory dummy keys/certificate fingerprints. These
 // exercise injected runtime metadata and stores; they are not Cloudflare E2E.
@@ -10,7 +11,8 @@ const publicOrigin = 'https://trial.example.test';
 const upstreamOrigin = 'https://trial-origin.example.test';
 function fixture(options = {}) {
   const secret = crypto.getRandomValues(new Uint8Array(32));
-  const approvedDevices = [{ id: 'mac-trial', fingerprintSha256: digest() }, { id: 'windows-trial', fingerprintSha256: digest() }];
+  const approvedDevices = (options.deviceIds ?? ['mac-trial', 'windows-trial'])
+    .map(id => ({ id, fingerprintSha256: digest() }));
   const live = new Set(approvedDevices.map(device => device.id)), nonces = new Set(), captured = [];
   let currentTime = 1800000000000, calls = 0;
   const config = { publicOrigin, upstreamOrigin, secret };
@@ -56,6 +58,78 @@ test('Windows and Mac are distinct allowed certificate identities without employ
   assert.equal((await (await f.gateway(f.request('/', { device: 1 }))).json()).deviceId, 'windows-trial');
   assert.equal((await (await f.gateway(f.request('/'))).json()).deviceId, 'mac-trial');
   assert.equal(f.calls, 2);
+});
+
+for (const count of [1, 2, 3]) {
+  test(`${count} approved devices each retain their own signed origin identity without employee credentials`, async () => {
+    const deviceIds = ['mac-trial', 'windows-trial', 'windows-second-trial'].slice(0, count);
+    const f = fixture({ deviceIds });
+    for (let device = 0; device < count; device++) {
+      const response = await f.gateway(f.request('/api/session', { device }));
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).deviceId, deviceIds[device]);
+    }
+    assert.equal(f.calls, count);
+    assert.equal(f.nonces.size, count);
+  });
+}
+
+test('three-device enrollment still rejects unknown, absent, invalid and revoked TLS identities before upstream', async () => {
+  const f = fixture({ deviceIds: ['mac-trial', 'windows-trial', 'windows-second-trial'] });
+  for (const options of [
+    { tls: { certFingerprintSHA256: digest() } }, { withCf: false },
+    { tls: { certPresented: '0' } }, { tls: { certVerified: 'FAILED' } },
+    { tls: { certRevoked: '1' } },
+  ]) {
+    const response = await f.gateway(f.request('/api/session', { device: 2, ...options }));
+    assert.equal(response.status, 403);
+  }
+  assert.equal(f.calls, 0, 'Rejected identities must never reach the origin');
+  for (const device of [0, 1, 2]) assert.equal((await f.gateway(f.request('/', { device }))).status, 200);
+  assert.equal(f.calls, 3);
+});
+
+test('revoking the third device at the origin denies its next request while the original two stay usable', async () => {
+  const f = fixture({ deviceIds: ['mac-trial', 'windows-trial', 'windows-second-trial'] });
+  assert.equal((await f.gateway(f.request('/api/session', { device: 2 }))).status, 200);
+  f.live.delete('windows-second-trial');
+  const revoked = await f.gateway(f.request('/api/session', { device: 2 }));
+  assert.equal(revoked.status, 403);
+  assert.equal((await revoked.json()).code, 'DEVICE_REVOKED');
+  for (const device of [0, 1]) {
+    const response = await f.gateway(f.request('/api/session', { device }));
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).deviceId, f.approvedDevices[device].id);
+  }
+  assert.equal(f.calls, 4);
+  assert.equal(f.nonces.size, 3, 'Revocation must deny access before consuming a proof nonce');
+});
+
+test('in-memory Worker bundle accepts only the three configured device fingerprints and refuses a fourth configuration', async () => {
+  const { code } = await createWorkerBundle();
+  const worker = (await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default;
+  const f = fixture({ deviceIds: ['mac-trial', 'windows-trial', 'windows-second-trial'] });
+  const env = { HOSTED_MODE: 'mock', HOSTED_PUBLIC_ORIGIN: publicOrigin,
+    HOSTED_UPSTREAM_ORIGIN: upstreamOrigin, HOSTED_GATEWAY_SECRET: 'local-three-device-test-secret-not-a-credential',
+    HOSTED_APPROVED_DEVICES: JSON.stringify(f.approvedDevices) };
+  const identities = [];
+  const verify = createOriginVerifier({ publicOrigin, upstreamOrigin, secret: env.HOSTED_GATEWAY_SECRET,
+    authorizeDevice: async ({ deviceId, fingerprintSha256 }) => f.approvedDevices.some(device => device.id === deviceId && device.fingerprintSha256 === fingerprintSha256),
+    consumeNonce: async () => true,
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async request => {
+    identities.push((await verify(request)).deviceId);
+    return new Response('local mock only');
+  };
+  try {
+    for (const device of [0, 1, 2]) assert.equal((await worker.fetch(f.request('/api/session', { device }), env)).status, 200);
+    assert.deepEqual(identities, f.approvedDevices.map(device => device.id));
+    assert.equal((await worker.fetch(f.request('/', { tls: { certFingerprintSHA256: digest() } }), env)).status, 403);
+    const invalid = { ...env, HOSTED_APPROVED_DEVICES: JSON.stringify([...f.approvedDevices, { id: 'fourth-trial', fingerprintSha256: digest() }]) };
+    assert.equal((await worker.fetch(f.request('/'), invalid)).status, 503);
+    assert.equal(identities.length, 3, 'Unknown fingerprints and over-limit configurations must not fetch upstream');
+  } finally { globalThis.fetch = originalFetch; }
 });
 
 test('Mac-only enrollment allows that certificate and rejects Windows or unknown certificates before upstream', async () => {
@@ -322,10 +396,14 @@ test('missing secrets, stores, malformed origins, extra devices and duplicate de
     { publicOrigin: 'https://user:pass@trial.example.test' }, { maxBodyBytes: 3000001 },
   ]) assert.throws(() => createGateway({ ...f.config, approvedDevices: f.approvedDevices, ...options }));
   for (const approvedDevices of [
-    [], [...f.approvedDevices, { id: 'extra', fingerprintSha256: digest() }],
+    [],
+    [...f.approvedDevices, { id: 'third', fingerprintSha256: digest() }, { id: 'fourth', fingerprintSha256: digest() }],
+    [...f.approvedDevices, { id: 'third', fingerprintSha256: digest() }, { id: 'fourth', fingerprintSha256: digest() }, { id: 'fifth', fingerprintSha256: digest() }],
     [f.approvedDevices[0], f.approvedDevices[0]],
     [f.approvedDevices[0], { id: f.approvedDevices[0].id, fingerprintSha256: digest() }],
     [f.approvedDevices[0], { id: 'other-id', fingerprintSha256: f.approvedDevices[0].fingerprintSha256 }],
+    [...f.approvedDevices, { id: f.approvedDevices[0].id, fingerprintSha256: digest() }],
+    [...f.approvedDevices, { id: 'third', fingerprintSha256: f.approvedDevices[0].fingerprintSha256 }],
   ]) {
     assert.throws(() => createGateway({ ...f.config, approvedDevices }));
   }

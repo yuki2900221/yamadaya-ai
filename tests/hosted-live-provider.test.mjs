@@ -147,7 +147,11 @@ test('hosted live four-feature flow reserves before each fake API call, protects
     for (const forbidden of [jobs[0].input.prompt, 'ダミー回答', 'dummy-text-credential', 'dummy-image-credential', '/9j/2Q==']) assert.ok(!records.includes(forbidden));
     const stored = (await f.db.query('SELECT value FROM yamadaya_trial.results')).rows;
     assert.equal(stored.length, 2); assert.ok(stored.every(row => row.value.demo === false && !row.value.image));
-    assert.equal((await f.ledger.usage()).uncertain, 3); assert.equal((await f.ledger.usage()).reserved, 1245000);
+    const settled = await f.ledger.usage();
+    assert.equal(settled.uncertain, 3);
+    assert.equal(settled.reserved, 450000 + settled.calculated, 'completed fake API usage replaces successful holds; original unknown holds remain');
+    const refreshedSession = await f.gateway(f.request('/api/session', { headers: { cookie: s.headers.cookie } }));
+    assert.equal((await refreshedSession.json()).budgetRemainingUsd, (10000000 - settled.reserved) / 1000000);
     assert.equal((await f.gateway(f.request('/api/end', { method: 'POST', headers: s.headers }))).status, 200);
     assert.equal(f.objects.size, 0);
   } finally { await f.close(); }

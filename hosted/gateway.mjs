@@ -14,9 +14,9 @@ function failure(status, code) {
 export function createGateway({ approvedDevices, fetchImpl = globalThis.fetch, now = () => Date.now(),
   timeoutMs = 180000, ...options } = {}) {
   const configuration = checkedConfiguration(options);
-  if (!Array.isArray(approvedDevices) || approvedDevices.length < 1 || approvedDevices.length > 2 || typeof fetchImpl !== 'function' ||
+  if (!Array.isArray(approvedDevices) || approvedDevices.length < 1 || approvedDevices.length > 3 || typeof fetchImpl !== 'function' ||
       typeof now !== 'function' || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 240000) {
-    throw new Error('One or two approved devices and bounded upstream transport are required.');
+    throw new Error('One to three approved devices and bounded upstream transport are required.');
   }
   const devices = new Map(), ids = new Set();
   for (const device of approvedDevices) {

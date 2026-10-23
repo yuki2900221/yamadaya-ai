@@ -102,9 +102,10 @@ test('the recovery flag is owner-authorized and is absent from a duplicate POST 
 });
 
 test('successful recovery still returns its saved output and does not use the unknown-operation flag',async t=>{
- const f=await fixture(t),id=randomUUID();
+ const f=await fixture(t),id=randomUUID(),originals=snapshot(f.app);
  const sent=await request(f.app,{url:'/api/jobs',method:'POST',headers:f.headers,body:{id,feature:'chat',input:{prompt:'別の新しい操作'}}});
  assert.equal(sent.statusCode,200);assert.equal(sent.json.state,'succeeded');
  const r=await recover(f,id);assert.equal(r.statusCode,200);assert.equal(r.json.result.text,'新しい操作のダミー回答');assert.equal(r.json.canStartNewOperations,false);assert.equal(f.calls(),1);
- assert.equal(f.app.ledger.usage().uncertain,3);assert.equal(f.app.ledger.usage().reserved,465000);
+ assert.equal(f.app.ledger.usage().uncertain,3);assert.equal(f.app.ledger.usage().reserved,451000);
+ for(const original of originals)assert.deepEqual(f.app.ledger.db.prepare('SELECT * FROM jobs WHERE id=?').get(original.id),original);
 });

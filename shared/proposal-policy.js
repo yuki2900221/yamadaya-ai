@@ -1,4 +1,5 @@
 import { proposalInput, PROPOSAL_SCHEMA, validProposal } from './proposal-contract.js';
+import { validPopDesignNotes } from './contracts.mjs';
 
 export const PROPOSAL_POLICY = 'source-lines-and-fixed-paper-v2';
 export const PROPOSAL_PAPERS = {
@@ -29,6 +30,16 @@ export function popCopyChoices(info) {
 // An empty value means no extra printed copy, never a printed UI instruction.
 export function safePopCopy(info, copy) {
   return popCopyChoices(info).includes(copy) ? copy : FALLBACK_COPY;
+}
+
+export function popHeadlineChoices(info) {
+  return [...new Set(['', ...info.split(/\r\n|\n|\r/).filter(line => line.trim() && line.length <= 180), FALLBACK_HEADLINE])];
+}
+
+// The empty option suppresses an additional headline, not the source product
+// information. Recheck at final dispatch, including requests from older tabs.
+export function safePopHeadline(info, headline) {
+  return popHeadlineChoices(info).includes(headline) ? headline : '';
 }
 
 // Whole lines preserve negation, qualification, numbers and spacing. Substring
@@ -78,11 +89,13 @@ export function reviewProposal(input, raw) {
 // Apply the same boundary when opening legacy browser drafts. Manual text is
 // retained only if it is one of the permitted values; enter new facts in info.
 export function reviewProposalDraft(draft, raw) {
+  if (draft.designNotes !== undefined && !validPopDesignNotes(draft.designNotes)) throw new Error('デザインの追加指定は500文字以内で入力してください。');
   const review = reviewProposal(draft, raw);
   const choices = sourceChoices(draft);
   return { review, draft: { ...draft,
-    headline: choices.headlines.includes(draft.headline) ? draft.headline : review.proposal.headlines[0],
+    headline: draft.headline === '' || choices.headlines.includes(draft.headline) ? draft.headline : review.proposal.headlines[0],
     catchphrase: choices.catchphrases.includes(draft.catchphrase) ? draft.catchphrase : review.proposal.catchphrase,
-    direction: Object.values(DESIGN_CHOICES).includes(draft.direction) ? draft.direction : review.proposal.direction,
+    direction: draft.direction === '' || Object.values(DESIGN_CHOICES).includes(draft.direction) ? draft.direction : review.proposal.direction,
+    designNotes: draft.designNotes ?? '',
   } };
 }

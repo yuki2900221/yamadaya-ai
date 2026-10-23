@@ -67,7 +67,57 @@ test('disconnected configuration and disabled search do not create paid jobs',as
 test('images require explicit confirmation and uploaded references are restricted',()=>{for(const input of [{prompt:'りんご'},{prompt:'りんご',confirmed:true,reference:'https://internal.test/secret'},{prompt:'りんご',confirmed:true,reference:'data:image/svg+xml;base64,PHN2Zz4='},{prompt:'りんご',confirmed:true,action:'edit'}])assert.throws(()=>validateJob(valid('image',input)));});
 test('all text workloads have store:false and no file/administrative tools',()=>{for(const feature of ['chat','writing','pop']){const r=requestFor(feature,{prompt:'test',paper:'a4l'});assert.equal(r.store,false);assert.equal(r.background,false);assert.deepEqual(r.tools,[]);assert.equal(r.max_output_tokens,1200);assert.equal(r.previous_response_id,undefined);assert.equal(r.input[0].role,'developer');}});
 test('audit ledger persists only owner hash, operation metadata and cost; a changed budget cannot erase usage',async t=>{const f=await fixture(t),secret='顧客情報ではないダミー文章XYZ';await request(f.app,{url:'/api/jobs',method:'POST',headers:f.headers,body:valid('chat',{prompt:secret})});const bytes=await fs.readFile(path.join(f.directory,'jobs.sqlite'));assert.ok(!bytes.includes(Buffer.from(secret)));assert.throws(()=>new Ledger(path.join(f.directory,'jobs.sqlite'),{budgetUsd:9}),/differs/);});
-test('budget is reserved before call, never above approved cap, and crash sending becomes unknown',async t=>{const dir=await fs.mkdtemp(path.join(os.tmpdir(),'yamadaya-ledger-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));const file=path.join(dir,'ledger.sqlite');let db=new Ledger(file,{budgetUsd:.02});const id=randomUUID();db.reserve(id,'dummy','chat');assert.throws(()=>db.reserve(randomUUID(),'dummy','chat'),/未確定/);db.finish(id,'succeeded',.0001);assert.throws(()=>db.reserve(randomUUID(),'dummy','chat'),/上限/);db.close();db=new Ledger(file,{budgetUsd:.02});assert.equal(db.usage().reserved,15000);db.close();assert.throws(()=>new Ledger(':memory:',{budgetUsd:11}));});
+test('known success releases its unused hold, permits another reservation, and still enforces the actual cap',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'yamadaya-ledger-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const file=path.join(dir,'ledger.sqlite');let db=new Ledger(file,{budgetUsd:.02});
+ const first=randomUUID();db.reserve(first,'dummy','chat',false,'first');
+ assert.equal(db.usage().reserved,15000);assert.throws(()=>db.reserve(randomUUID(),'dummy','chat'),/未確定/);
+ db.finish(first,'succeeded',.0001);assert.equal(db.usage().reserved,100);assert.equal(db.get(first,'dummy').hold,15000);
+ const second=randomUUID();db.reserve(second,'dummy','chat',false,'second');assert.equal(db.usage().reserved,15100);
+ db.finish(second,'succeeded',.015);assert.throws(()=>db.reserve(randomUUID(),'dummy','chat'),e=>e.code==='BUDGET_LIMIT');
+ db.close();db=new Ledger(file,{budgetUsd:.02});
+ assert.equal(db.usage().reserved,15100);assert.equal(db.usage().calculated,15100);assert.equal(db.usage().uncertain,0);
+ db.close();assert.throws(()=>new Ledger(':memory:',{budgetUsd:11}));
+});
+
+test('restart retains settled cost and converts an interrupted sending job to an unreleased unknown',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'yamadaya-ledger-restart-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const file=path.join(dir,'ledger.sqlite');let db=new Ledger(file,{budgetUsd:.02});
+ const success=randomUUID(),sending=randomUUID();db.reserve(success,'dummy','chat',false,'success');db.finish(success,'succeeded',.0001);
+ db.reserve(sending,'dummy','chat',false,'interrupted');db.close();db=new Ledger(file,{budgetUsd:.02});t.after(()=>db.close());
+ assert.equal(db.get(sending,'dummy').state,'unknown');assert.equal(db.usage().reserved,15100);assert.equal(db.usage().calculated,100);
+ assert.equal(db.usage().uncertain,1);assert.throws(()=>db.reserve(randomUUID(),'dummy','chat'),e=>e.code==='UNCERTAIN');
+});
+
+for(const [name,cost,expected]of [['missing',null,15000],['undefined',undefined,15000],['NaN',NaN,15000],['infinite',Infinity,15000],['negative',-1,15000],['string','0',15000],['unsafe',Number.MAX_VALUE,15000],['above hold',.02,20000]])test(`ledger refuses to release a successful job with ${name} cost`,t=>{
+ const db=new Ledger(':memory:',{budgetUsd:10});t.after(()=>db.close());const id=randomUUID();db.reserve(id,'dummy','chat',false,'invalid');
+ const record=db.finish(id,'succeeded',cost);assert.equal(record.state,'unknown');assert.equal(record.hold,15000);
+ assert.equal(db.usage().reserved,expected);assert.equal(db.usage().uncertain,1);
+ assert.throws(()=>db.reserve(randomUUID(),'dummy','chat'),e=>e.code==='UNCERTAIN');
+});
+
+test('zero-cost success settles once and duplicate completion cannot erase cost or resolve an unknown',t=>{
+ const db=new Ledger(':memory:',{budgetUsd:10});t.after(()=>db.close());
+ const zero=randomUUID();db.reserve(zero,'dummy','chat',false,'free');db.finish(zero,'succeeded',0);
+ assert.equal(db.get(zero,'dummy').state,'succeeded');assert.equal(db.usage().reserved,0);
+ const paid=randomUUID();db.reserve(paid,'dummy','chat',false,'paid');db.finish(paid,'succeeded',.001);
+ const paidBefore=db.get(paid,'dummy');
+ for(const state of ['succeeded','unknown'])assert.throws(()=>db.finish(paid,state,0),e=>e.code==='ALREADY_FINISHED');
+ assert.deepEqual(db.get(paid,'dummy'),paidBefore);assert.equal(db.usage().reserved,1000);
+ const unknown=randomUUID();db.reserve(unknown,'dummy','chat',false,'unknown');db.finish(unknown,'unknown',.0001);
+ const unknownBefore=db.get(unknown,'dummy');assert.equal(db.usage().reserved,16000);
+ assert.throws(()=>db.finish(unknown,'succeeded',0),e=>e.code==='ALREADY_FINISHED');
+ assert.deepEqual(db.get(unknown,'dummy'),unknownBefore);assert.equal(db.usage().reserved,16000);
+ assert.throws(()=>db.finish(randomUUID(),'succeeded',0),e=>e.code==='NOT_FOUND');
+ assert.throws(()=>db.finish(unknown,'sending',null),e=>e.code==='INVALID_REQUEST');
+});
+
+test('invalid historical success metadata never releases a hold during aggregation',t=>{
+ const db=new Ledger(':memory:',{budgetUsd:10});t.after(()=>db.close());
+ const insert=db.db.prepare("INSERT INTO jobs VALUES(?,?,?,'succeeded',?,?,?,NULL,?)");
+ for(const [i,cost]of [null,-1,.5,20000].entries())insert.run(`bad-${i}`,'dummy','chat',15000,cost,1000,`bad-cost-${i}`);
+ assert.equal(db.usage().reserved,65000);
+});
 test('usage prices numeric known meters only',()=>{const u={input_tokens:100,input_tokens_details:{cached_tokens:0},output_tokens:100,total_tokens:200};assert.equal(textCost(u),.00006);assert.equal(textCost({...u,input_tokens_details:{cached_tokens:0,unknown:1}}),null);assert.equal(textCost({}),null);assert.equal(imageCost({}),null);});
 test('one approved continuation is bound to exact input/id/source/expiry and preserves the original hold',()=>{
  const db=new Ledger(':memory:',{budgetUsd:10,now:()=>1000});
@@ -80,7 +130,7 @@ test('one approved continuation is bound to exact input/id/source/expiry and pre
   assert.equal(db.reserve(id,'next','image',false,'approved-hash',permit).duplicate,true);
   db.finish(id,'succeeded',.05);
   assert.equal(db.get(source,'first').state,'unknown');assert.equal(db.get(source,'first').hold,350000);
-  assert.equal(db.usage().reserved,700000);assert.equal(db.usage().uncertain,1);
+  assert.equal(db.usage().reserved,400000);assert.equal(db.usage().uncertain,1);
   assert.throws(()=>db.reserve(randomUUID(),'third','image',false,'approved-hash',permit),/未確定/);
  }finally{db.close();}
 });
@@ -103,11 +153,12 @@ test('approved hold acknowledgement permits distinct work but never releases, re
   assert.throws(()=>db.reserve(randomUUID(),'next','image',false,'original-pop',null,ack),/同じ内容/);
   assert.throws(()=>db.reserve(randomUUID(),'next','chat',false,'distinct',null,{...ack,hold:0}),/未確定/);
   const id=randomUUID();db.reserve(id,'next','image',false,'new-image',null,ack);db.finish(id,'succeeded',.01);
-  assert.equal(db.get(source,'prior').state,'unknown');assert.equal(db.usage().reserved,700000);
+  assert.equal(db.get(source,'prior').state,'unknown');assert.equal(db.usage().reserved,360000);
   const text=randomUUID();db.reserve(text,'next','chat',false,'new-text',null,ack);db.finish(text,'succeeded',.001);
-  assert.throws(()=>db.reserve(randomUUID(),'next','chat',false,'over-budget',null,ack),/上限/);
+  const more=randomUUID();db.reserve(more,'next','image',false,'another-image',null,ack);db.finish(more,'succeeded',.34);
+  assert.throws(()=>db.reserve(randomUUID(),'next','image',false,'over-budget',null,ack),/上限/);
   now=2001;assert.equal(db.acknowledged(ack),false);now=1000;
-  db.finish(text,'unknown',null);assert.equal(db.acknowledged(ack),false);
+  const failed=randomUUID();db.reserve(failed,'next','chat',false,'new-failure',null,ack);db.finish(failed,'unknown',null);assert.equal(db.acknowledged(ack),false);
   assert.throws(()=>db.reserve(randomUUID(),'next','chat',false,'another',null,ack),/未確定/);
  }finally{db.close();}
 });

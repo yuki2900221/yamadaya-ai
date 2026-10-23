@@ -53,14 +53,14 @@ async function setup(t) {
   return { fixture, baseline, sessions, send, create, calls: () => calls };
 }
 
-async function assertHoldsUnchanged(context, newReservations, newJobCount) {
+async function assertHoldsUnchanged(context, newJobCount) {
   const { fixture, baseline } = context;
   assert.equal(baseline.unknown.length, 3);
   assert.equal(baseline.unknown.reduce((sum, job) => sum + Number(job.hold), 0), 450000);
   assert.deepEqual((await fixture.db.query("SELECT * FROM yamadaya_trial.jobs WHERE state='unknown' ORDER BY id")).rows, baseline.unknown);
   assert.deepEqual((await fixture.db.query('SELECT * FROM yamadaya_trial.budget')).rows, baseline.budget);
   const usage = await fixture.ledger.usage();
-  assert.equal(usage.reserved, 450000 + newReservations);
+  assert.equal(usage.reserved, 450000, 'zero-cost completed mock jobs release only their unused reservations');
   assert.equal(usage.count, 3 + newJobCount);
   assert.equal(usage.uncertain, 3);
   assert.equal(usage.calculated, 0);
@@ -98,7 +98,7 @@ test('two normal device sessions cannot read or replay each other\'s jobs with t
     assert.equal(refused.notDispatched, true);
   }
   assert.equal(context.calls(), 2, 'Cross-device requests must not execute the mock provider');
-  await assertHoldsUnchanged(context, 30000, 2);
+  await assertHoldsUnchanged(context, 2);
 });
 
 test('two normal device sessions cannot recover opponent image manifests or read image chunks', async t => {
@@ -119,7 +119,7 @@ test('two normal device sessions cannot recover opponent image manifests or read
     }
   }
   assert.equal(context.calls(), 2);
-  await assertHoldsUnchanged(context, 700000, 2);
+  await assertHoldsUnchanged(context, 2);
 });
 
 for (const revokedDevice of [0, 1]) test(`revoking only device ${revokedDevice} leaves the other session, image and new jobs usable through cleanup`, async t => {
@@ -159,5 +159,5 @@ for (const revokedDevice of [0, 1]) test(`revoking only device ${revokedDevice} 
   assert.equal((await context.fixture.db.query('SELECT count(*)::int n FROM yamadaya_trial.results')).rows[0].n, 1);
   await assertImage(context, live, liveImage);
   assert.equal((await context.send(stopped, '/api/session')).status, 403);
-  await assertHoldsUnchanged(context, 715000, 3);
+  await assertHoldsUnchanged(context, 3);
 });

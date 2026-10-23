@@ -199,7 +199,10 @@ BEGIN
       IF changed > 0 THEN UPDATE yamadaya_trial.budget SET paused=true WHERE id=1; b.paused := true; END IF;
     END IF;
     IF action = 'usage' THEN
-      SELECT jsonb_build_object('limit',b.limit_micros,'reserved',coalesce(sum(greatest(hold,coalesce(cost,hold))),0),
+      -- Settle only a recorded success with a known calculated cost. Uncertain
+      -- and in-flight jobs keep their hold (or a higher known amount). The same
+      -- expression below makes displayed usage and admission use one budget.
+      SELECT jsonb_build_object('limit',b.limit_micros,'reserved',coalesce(sum(CASE WHEN state='succeeded' AND cost IS NOT NULL THEN cost ELSE greatest(hold,coalesce(cost,hold)) END),0),
         'calculated',coalesce(sum(cost),0),'count',count(*),'uncertain',count(*) FILTER(WHERE state IN ('sending','unknown')),
         'imported',b.imported,'paused',b.paused,'expires',b.approved_until)
         INTO v FROM yamadaya_trial.jobs;
@@ -233,7 +236,7 @@ BEGIN
         hold_amount := CASE p->>'feature' WHEN 'chat' THEN CASE WHEN (p->>'search')::boolean THEN 50000 ELSE 15000 END
           WHEN 'writing' THEN 15000 WHEN 'pop' THEN 15000 WHEN 'image' THEN 350000 ELSE NULL END;
         IF hold_amount IS NULL OR (p->>'executorHash') !~ '^[a-f0-9]{64}$' THEN RETURN jsonb_build_object('ok',false,'code','INVALID_REQUEST'); END IF;
-        SELECT coalesce(sum(greatest(hold,coalesce(cost,hold))),0) INTO reserved_amount FROM yamadaya_trial.jobs;
+        SELECT coalesce(sum(CASE WHEN state='succeeded' AND cost IS NOT NULL THEN cost ELSE greatest(hold,coalesce(cost,hold)) END),0) INTO reserved_amount FROM yamadaya_trial.jobs;
         IF reserved_amount + hold_amount > b.limit_micros THEN RETURN jsonb_build_object('ok',false,'code','BUDGET_LIMIT'); END IF;
         INSERT INTO yamadaya_trial.jobs(id,owner,feature,state,hold,created,request_hash,executor_hash,lease_expires)
           VALUES(p->>'id',p->>'owner',p->>'feature','sending',hold_amount,t,p->>'requestHash',p->>'executorHash',t+300000) RETURNING * INTO j;
